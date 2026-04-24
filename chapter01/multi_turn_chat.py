@@ -12,7 +12,7 @@ from openai import OpenAI
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 client = OpenAI()
-MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-chat")
+MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 messages = [
     {"role": "system", "content": "你是一位简洁有力的AI助手，回答控制在50字以内。"},

@@ -16,7 +16,7 @@ from openai import OpenAI
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 client = OpenAI()
-MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-chat")
+MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 TASK = "请读取当前目录下的pyproject.toml文件, 告诉我这个项目的名称和依赖包有哪些"
 

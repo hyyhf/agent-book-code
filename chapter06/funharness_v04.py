@@ -53,7 +53,7 @@ from skill_loader import (
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 client = OpenAI()
-MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-chat")
+MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 MAX_ITERATIONS = 20
 

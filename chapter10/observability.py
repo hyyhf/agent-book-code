@@ -701,7 +701,7 @@ if __name__ == "__main__":
         loop_span.input_summary = "user: Read and summarize README.md"
 
         # 模拟 LLM 调用
-        with tracer.span(SpanKind.LLM_CALL, "deepseek-chat") as llm_span:
+        with tracer.span(SpanKind.LLM_CALL, "deepseek-v4-flash") as llm_span:
             time.sleep(0.05)  # 模拟延迟
             llm_span.token_usage = {"input": 1500, "output": 200}
             llm_span.output_summary = "I'll read the file..."
@@ -715,7 +715,7 @@ if __name__ == "__main__":
             tool_span.metadata["tool_name"] = "tool_read_file"
 
         # 模拟第二次 LLM 调用
-        with tracer.span(SpanKind.LLM_CALL, "deepseek-chat") as llm_span2:
+        with tracer.span(SpanKind.LLM_CALL, "deepseek-v4-flash") as llm_span2:
             time.sleep(0.05)
             llm_span2.token_usage = {"input": 2000, "output": 500}
             llm_span2.output_summary = "The README describes FunHarness..."
@@ -732,7 +732,7 @@ if __name__ == "__main__":
     logger = StructuredLogger(level=LogLevel.DEBUG)
 
     logger.info("Agent started", version="v0.8", mode="suggest")
-    logger.log_llm_call("deepseek-chat", 1500, 200, 523.4)
+    logger.log_llm_call("deepseek-v4-flash", 1500, 200, 523.4)
     logger.log_tool_call("tool_read_file", 12.3, True, result_length=4500)
     logger.log_tool_call("tool_run_command", 1023.7, False, result_length=0)
     logger.log_hook("path_normalizer", "pre_tool_use", "modify")
@@ -748,11 +748,11 @@ if __name__ == "__main__":
     dashboard = CostDashboard(input_price=2.5, output_price=10.0)
 
     # 模拟多次调用
-    dashboard.record("agent_loop", 1500, 200, "deepseek-chat", 523.4)
-    dashboard.record("agent_loop", 2000, 500, "deepseek-chat", 812.1)
-    dashboard.record("agent_loop", 1800, 300, "deepseek-chat", 634.5)
-    dashboard.record("compaction", 3000, 800, "deepseek-chat", 1200.0)
-    dashboard.record("planning", 500, 400, "deepseek-chat", 350.2)
+    dashboard.record("agent_loop", 1500, 200, "deepseek-v4-flash", 523.4)
+    dashboard.record("agent_loop", 2000, 500, "deepseek-v4-flash", 812.1)
+    dashboard.record("agent_loop", 1800, 300, "deepseek-v4-flash", 634.5)
+    dashboard.record("compaction", 3000, 800, "deepseek-v4-flash", 1200.0)
+    dashboard.record("planning", 500, 400, "deepseek-v4-flash", 350.2)
 
     print(dashboard.report())
 

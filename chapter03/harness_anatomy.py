@@ -20,7 +20,7 @@ from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 client = OpenAI()
-MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-chat")
+MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 # =============================================================
 #  要素一: System Prompt -- 定义智能体的身份和行为准则

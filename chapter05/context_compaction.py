@@ -21,7 +21,7 @@ from openai import OpenAI
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 client = OpenAI()
-MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-chat")
+MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 # 上下文窗口的软上限(字符数)。到达此阈值触发压缩。
 # 真实场景中会用 tiktoken 精确计数; 这里用字符数近似, 比例约为 1 token ~ 4 字符。

@@ -98,7 +98,7 @@ from multi_agent import (
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 client = OpenAI()
-MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-chat")
+MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 MAX_ITERATIONS = 25  # v0.7 提高上限, 长时运行场景需要更多轮次
 

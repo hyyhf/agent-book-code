@@ -15,7 +15,7 @@ from openai import OpenAI, APIError, RateLimitError, APITimeoutError, APIConnect
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 client = OpenAI()
-MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-chat")
+MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 
 def call_model_with_retry(client, max_retries=3, **kwargs):
