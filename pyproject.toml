@@ -8,4 +8,11 @@ dependencies = [
     "openai>=2.32.0",
     "openai-agents>=0.14.3",
     "python-dotenv>=1.2.2",
+    "textual>=8.2.4",
 ]
+
+[project.scripts]
+fh = "funharness.src.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["funharness*"]
