@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from .core.tools import registry
-from .core.llm import call_with_retry, process_stream_response
+from .core.llm import call_with_retry, process_stream_response, MODEL
 from .core.system_prompt import build_system_prompt, build_environment_block, build_tools_guide
 from .core.context import (
     CostTracker, estimate_tokens, build_context_block,
@@ -138,6 +138,7 @@ class FunHarnessAgent:
         on_token(str): Called for each streaming token
         on_reasoning_token(str): Called for each thinking/reasoning token
         on_reasoning_start(): Called when reasoning output begins
+        on_tool_gen(index, name, chunk): Called for each tool argument token
         on_tool_call(name, args_preview, risk): Called when a tool is invoked
         on_tool_result(name, result, hook_feedback): Called with tool result
         on_status(str): Called with status messages
@@ -145,7 +146,7 @@ class FunHarnessAgent:
     """
 
     def __init__(self, mode="suggest", on_token=None, on_reasoning_token=None,
-                 on_reasoning_start=None, on_tool_call=None,
+                 on_reasoning_start=None, on_tool_gen=None, on_tool_call=None,
                  on_tool_result=None, on_status=None, on_approval=None):
         global _task_list, _progress_tracker, _git_tracker
 
@@ -153,6 +154,7 @@ class FunHarnessAgent:
         self.on_token = on_token
         self.on_reasoning_token = on_reasoning_token
         self.on_reasoning_start = on_reasoning_start
+        self.on_tool_gen = on_tool_gen
         self.on_tool_call = on_tool_call
         self.on_tool_result = on_tool_result
         self.on_status = on_status
@@ -162,7 +164,7 @@ class FunHarnessAgent:
         self.pm = PermissionManager(mode=self.mode)
         self.approval_flow = ApprovalFlow(self.pm, approval_callback=on_approval)
         self.session_mgr = SessionManager()
-        self.cost_tracker = CostTracker()
+        self.cost_tracker = CostTracker(model=MODEL)
         self.hook_registry = init_hooks()
         self.middleware_chain = init_middleware()
 
@@ -220,6 +222,7 @@ class FunHarnessAgent:
 
         handlers = {
             "/help": lambda: self._help_text(),
+            "/new": lambda: self._handle_new_session(),
             "/cost": lambda: f"{self.cost_tracker.summary()}",
             "/context": lambda: (
                 f"System prompt: {len(self._system_prompt)} chars\n"
@@ -266,6 +269,7 @@ class FunHarnessAgent:
         return (
             "Available commands:\n"
             "  /help       - Show this help\n"
+            "  /new        - Start a new conversation session\n"
             "  /cost       - Show token usage and cost\n"
             "  /context    - Show context window info\n"
             "  /save       - Save current session\n"
@@ -291,6 +295,23 @@ class FunHarnessAgent:
     def _save_session(self):
         self.current_session.messages = self.messages
         return self.session_mgr.save(self.current_session)
+
+    def _handle_new_session(self):
+        """Start a new conversation session, saving the current one."""
+        self.current_session.messages = self.messages
+        self.session_mgr.save(self.current_session)
+        # Reset conversation
+        self.current_session = Session()
+        self._build_system_prompt()
+        self.messages = [{"role": "system", "content": self._system_prompt}]
+        self.current_session.messages = self.messages
+        self.tool_calls_history.clear()
+        # Reset tracer for new session
+        self.tracer = Tracer()
+        return (
+            f"[New Session] Previous session saved.\n"
+            f"Trace: {self.tracer.trace_id}"
+        )
 
     def _handle_mode(self, arg):
         if not arg:
@@ -361,6 +382,7 @@ class FunHarnessAgent:
         This is an async-compatible generator that yields events:
         Uses callbacks (on_token, on_tool_call, on_tool_result, on_status).
         """
+        self.cost_tracker.mark_turn_start()
         self.messages.append({"role": "user", "content": user_input})
         tools = registry.get_openai_schemas()
 
@@ -392,6 +414,7 @@ class FunHarnessAgent:
                 msg = process_stream_response(
                     stream, on_token=self.on_token,
                     on_reasoning_token=self.on_reasoning_token,
+                    on_tool_gen=self.on_tool_gen,
                     cost_tracker=self.cost_tracker,
                 )
                 self.messages.append(msg)
@@ -424,6 +447,7 @@ class FunHarnessAgent:
             msg = process_stream_response(
                 stream, on_token=self.on_token,
                 on_reasoning_token=_on_reasoning_wrapper,
+                on_tool_gen=self.on_tool_gen,
                 cost_tracker=self.cost_tracker,
             )
             self.messages.append(msg)

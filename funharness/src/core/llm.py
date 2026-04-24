@@ -53,13 +53,14 @@ def call_with_retry(messages, tools, stream=False, max_retries=3):
 
 
 def process_stream_response(stream, on_token=None, on_reasoning_token=None,
-                            cost_tracker=None):
+                            on_tool_gen=None, cost_tracker=None):
     """Process streaming response, call on_token for each text chunk.
 
     Args:
         stream: OpenAI streaming response
         on_token: callback(str) for each content token
         on_reasoning_token: callback(str) for each reasoning/thinking token
+        on_tool_gen: callback(index, name, chunk) for each tool argument token
         cost_tracker: optional CostTracker to update usage
 
     Returns:
@@ -100,6 +101,13 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
                         tool_calls_data[idx]["name"] = tc.function.name
                     if tc.function.arguments:
                         tool_calls_data[idx]["arguments"] += tc.function.arguments
+                        # Stream tool argument generation to UI
+                        if on_tool_gen:
+                            on_tool_gen(
+                                idx,
+                                tool_calls_data[idx]["name"],
+                                tc.function.arguments,
+                            )
 
     content = "".join(content_parts) if content_parts else None
     reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
@@ -123,3 +131,4 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
         msg["tool_calls"] = tc_list
 
     return msg
+

@@ -109,13 +109,64 @@ def estimate_tokens(messages: list[dict]) -> int:
     return total_chars // 4
 
 
+# ---------------------------------------------------------------------------
+# Model Pricing Registry (CNY per million tokens)
+#
+# Each entry maps a model name to a dict with three price tiers:
+#   input_cache_hit  - input price when cache is hit
+#   input_cache_miss - input price when cache is missed (conservative default)
+#   output           - output token price
+#
+# To add a new model or update prices, simply add/modify an entry here.
+# ---------------------------------------------------------------------------
+
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "deepseek-v4-flash": {
+        "input_cache_hit":  0.2,
+        "input_cache_miss": 1.0,
+        "output":           2.0,
+    },
+    "deepseek-v4-pro": {
+        "input_cache_hit":  1.0,
+        "input_cache_miss": 12.0,
+        "output":           24.0,
+    },
+}
+
+# Fallback pricing for unknown models (uses the cheapest tier as default)
+_DEFAULT_PRICING: dict[str, float] = {
+    "input_cache_hit":  0.2,
+    "input_cache_miss": 1.0,
+    "output":           2.0,
+}
+
+
+def get_model_pricing(model: str) -> dict[str, float]:
+    """Look up pricing for a model. Falls back to default if not found."""
+    return MODEL_PRICING.get(model, _DEFAULT_PRICING)
+
+
 class CostTracker:
-    def __init__(self, input_price: float = 2.5, output_price: float = 10.0):
+    """Token usage and cost tracker with per-model pricing.
+
+    Pricing is looked up from MODEL_PRICING by model name.
+    Uses cache-miss input price as the conservative estimate.
+    Supports per-turn tracking via mark_turn_start() / turn_summary().
+    """
+
+    def __init__(self, model: str | None = None):
+        pricing = get_model_pricing(model or "")
+        self.input_price_per_m = pricing["input_cache_miss"]
+        self.output_price_per_m = pricing["output"]
+        self.model = model or ""
+
         self.total_input_tokens = 0
         self.total_output_tokens = 0
-        self.input_price_per_m = input_price
-        self.output_price_per_m = output_price
         self.call_count = 0
+
+        # Per-turn tracking
+        self._turn_input_start = 0
+        self._turn_output_start = 0
 
     def update(self, usage):
         if usage is None:
@@ -123,6 +174,38 @@ class CostTracker:
         self.total_input_tokens += getattr(usage, "prompt_tokens", 0) or 0
         self.total_output_tokens += getattr(usage, "completion_tokens", 0) or 0
         self.call_count += 1
+
+    # -- Turn-level tracking --
+
+    def mark_turn_start(self):
+        """Snapshot current totals so we can compute per-turn delta later."""
+        self._turn_input_start = self.total_input_tokens
+        self._turn_output_start = self.total_output_tokens
+
+    @property
+    def turn_input_tokens(self) -> int:
+        return self.total_input_tokens - self._turn_input_start
+
+    @property
+    def turn_output_tokens(self) -> int:
+        return self.total_output_tokens - self._turn_output_start
+
+    @property
+    def turn_tokens(self) -> int:
+        return self.turn_input_tokens + self.turn_output_tokens
+
+    @property
+    def turn_cost(self) -> float:
+        return (self.turn_input_tokens * self.input_price_per_m +
+                self.turn_output_tokens * self.output_price_per_m) / 1_000_000
+
+    def turn_summary(self) -> str:
+        return (
+            f"{self.turn_tokens:,} tokens | "
+            f"\u00a5{self.turn_cost:.4f}"
+        )
+
+    # -- Session-level totals --
 
     @property
     def total_tokens(self) -> int:
@@ -137,7 +220,7 @@ class CostTracker:
         return (
             f"API calls: {self.call_count} | "
             f"Tokens: {self.total_input_tokens:,} in + {self.total_output_tokens:,} out = "
-            f"{self.total_tokens:,} total | Cost: ${self.estimated_cost:.4f}"
+            f"{self.total_tokens:,} total | Cost: \u00a5{self.estimated_cost:.4f}"
         )
 
 

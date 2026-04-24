@@ -51,7 +51,7 @@ class StatusBar(Static):
     }}
     """
 
-    def update_info(self, mode="suggest", messages=0, tokens=0, cost="$0.0000"):
+    def update_info(self, mode="suggest", messages=0, tokens=0, cost="\u00a50.0000"):
         self.update(
             f" [{OCHRE_PRIMARY}]FunHarness[/] | "
             f"Mode: [bold {OCHRE_BRIGHT}]{mode}[/] | "
@@ -197,6 +197,67 @@ class AssistantMessage(Static):
     """
 
 
+class ToolGenBlock(Static):
+    """Live-updating widget showing tool argument generation in progress.
+
+    Displays a spinner + tool name + streaming argument preview.
+    """
+
+    DEFAULT_CSS = f"""
+    ToolGenBlock {{
+        height: auto;
+        padding: 0 1 0 2;
+        margin: 0 2 0 4;
+        border-left: thick {OCHRE_MUTED};
+        color: {TEXT_DIM};
+    }}
+    """
+
+    def __init__(self):
+        super().__init__(" ")
+        self._tool_name = ""
+        self._buffer = ""
+        self._frame_idx = 0
+        self._timer: Timer | None = None
+
+    def on_mount(self) -> None:
+        self._timer = self.set_interval(0.12, self._tick)
+
+    def set_tool_name(self, name: str) -> None:
+        self._tool_name = name
+
+    def append_chunk(self, chunk: str) -> None:
+        self._buffer += chunk
+        self._refresh_display()
+
+    def _tick(self) -> None:
+        self._frame_idx = (self._frame_idx + 1) % len(SPINNER_FRAMES)
+        self._refresh_display()
+
+    def _refresh_display(self) -> None:
+        frame = SPINNER_FRAMES[self._frame_idx]
+        header = (
+            f"[{OCHRE_PRIMARY}]{frame}[/] "
+            f"[{OCHRE_BRIGHT}]{ICONS['tool']}[/] "
+            f"[{TEXT_SECONDARY}]Generating {self._tool_name}...[/]"
+        )
+        lines = [header]
+        if self._buffer:
+            # Show first 200 chars as preview
+            preview = self._buffer[:200]
+            if len(self._buffer) > 200:
+                preview += "..."
+            lines.append(f"[{TEXT_DIM}]{escape(preview)}[/]")
+            lines.append(
+                f"[{TEXT_DIM}]({len(self._buffer)} chars generated)[/]"
+            )
+        self.update("\n".join(lines))
+
+    def on_unmount(self) -> None:
+        if self._timer:
+            self._timer.stop()
+
+
 class ToolCallBlock(Static):
     """Bordered box showing a tool invocation and its result.
 
@@ -286,6 +347,13 @@ class FunHarnessApp(App):
         height: 1fr;
         scrollbar-size: 1 1;
     }}
+    .turn-cost-label {{
+        text-align: right;
+        height: auto;
+        padding: 0 2;
+        margin: 0 2 1 0;
+        color: {TEXT_DIM};
+    }}
     """
 
     BINDINGS = [
@@ -302,6 +370,7 @@ class FunHarnessApp(App):
         self._streaming_widget: StreamingText | None = None
         self._thinking_widget: ThinkingIndicator | None = None
         self._reasoning_widget: ReasoningBlock | None = None
+        self._tool_gen_widget: ToolGenBlock | None = None
         self._last_tool_block: ToolCallBlock | None = None
 
     def compose(self) -> ComposeResult:
@@ -324,23 +393,27 @@ class FunHarnessApp(App):
         self.query_one("#prompt-input", PromptInput).focus()
 
     def _init_agent(self):
+        import os
         from ..agent import FunHarnessAgent
         self._agent = FunHarnessAgent(
             mode="suggest",
             on_token=self._on_token_sync,
             on_reasoning_token=self._on_reasoning_token_sync,
             on_reasoning_start=self._on_reasoning_start_sync,
+            on_tool_gen=self._on_tool_gen_sync,
             on_tool_call=self._on_tool_call_sync,
             on_tool_result=self._on_tool_result_sync,
             on_status=self._on_status_sync,
             on_approval=self._on_approval_sync,
         )
         info = self._agent.get_info()
+        workspace = os.getcwd()
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         scroll.mount(SystemMessage(
             f"[{TEXT_DIM}]  Mode: {info['mode']} | "
             f"Tools: {info['tools']} | "
-            f"Trace: {info['trace_id']}[/]"
+            f"Trace: {info['trace_id']}\n"
+            f"  Workspace: {workspace}[/]"
         ))
 
     # ---- Thread-safe callbacks ----
@@ -364,6 +437,9 @@ class FunHarnessApp(App):
 
     def _on_reasoning_start_sync(self):
         self._safe_callback(self._show_reasoning_start)
+
+    def _on_tool_gen_sync(self, index: int, name: str, chunk: str):
+        self._safe_callback(self._append_tool_gen, name, chunk)
 
     def _on_tool_call_sync(self, name: str, preview: str, risk: str):
         self._safe_callback(self._show_tool_call, name, preview, risk)
@@ -416,11 +492,34 @@ class FunHarnessApp(App):
             self._reasoning_widget.finish_streaming()
             self._reasoning_widget = None
 
+    # ---- Tool generation streaming ----
+
+    def _append_tool_gen(self, name: str, chunk: str):
+        """Show tool argument generation in progress (only for tool_write_file)."""
+        if name != "tool_write_file":
+            return
+        self._finish_reasoning()
+        self._hide_thinking()
+        if self._tool_gen_widget is None:
+            self._tool_gen_widget = ToolGenBlock()
+            scroll = self.query_one("#chat-scroll", VerticalScroll)
+            scroll.mount(self._tool_gen_widget)
+        self._tool_gen_widget.set_tool_name(name)
+        self._tool_gen_widget.append_chunk(chunk)
+        self._scroll_bottom()
+
+    def _finish_tool_gen(self):
+        """Remove the tool generation preview."""
+        if self._tool_gen_widget is not None:
+            self._tool_gen_widget.remove()
+            self._tool_gen_widget = None
+
     # ---- Streaming ----
 
     def _append_token(self, token: str):
-        # Finish reasoning block on first content token
+        # Finish reasoning/tool-gen block on first content token
         self._finish_reasoning()
+        self._finish_tool_gen()
         # Remove thinking indicator on first token
         self._hide_thinking()
 
@@ -452,8 +551,9 @@ class FunHarnessApp(App):
     # ---- Tool call display ----
 
     def _show_tool_call(self, name: str, preview: str, risk: str):
-        # Finish any ongoing reasoning/stream first
+        # Finish any ongoing reasoning/tool-gen/stream first
         self._finish_reasoning()
+        self._finish_tool_gen()
         if self._is_streaming:
             self._finish_stream()
         self._hide_thinking()
@@ -604,7 +704,19 @@ class FunHarnessApp(App):
     def _after_agent_run(self):
         self._hide_thinking()
         self._finish_reasoning()
+        self._finish_tool_gen()
         self._finish_stream()
+
+        # Show per-turn token/cost in a right-aligned dim label
+        if self._agent and self._agent.cost_tracker.turn_tokens > 0:
+            turn_text = self._agent.cost_tracker.turn_summary()
+            scroll = self.query_one("#chat-scroll", VerticalScroll)
+            scroll.mount(Static(
+                f"[{TEXT_DIM}]{turn_text}[/]",
+                classes="turn-cost-label",
+            ))
+            self._scroll_bottom()
+
         self._update_status()
         self._last_tool_block = None
         input_widget = self.query_one("#prompt-input", PromptInput)
