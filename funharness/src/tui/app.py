@@ -440,6 +440,12 @@ class ToolCallBlock(Static):
             f"[{self._risk_label}]  [{TOOL_TIMER_COLOR}]({timer})[/]"
         )
 
+    def update_call_markup(self, call_markup: str) -> None:
+        """Refresh displayed arguments while keeping the timer running."""
+        self._call_markup = call_markup
+        if not self._result_markup:
+            self.update(call_markup)
+
     def _stop_timer(self) -> None:
         self._elapsed = time.monotonic() - self._started_at
         self._is_running = False
@@ -679,6 +685,8 @@ class FunHarnessApp(App):
         self._tool_gen_widget: ToolGenBlock | None = None
         self._last_tool_block: ToolCallBlock | None = None
         self._last_tool_name: str = ""
+        self._pending_tool_blocks: dict[str, ToolCallBlock] = {}
+        self._pending_tool_arg_buffers: dict[str, str] = {}
         self._last_stream_render_at = 0.0
         # Permission mode cycling
         self._permission_modes = ["auto", "suggest", "approve"]
@@ -871,18 +879,33 @@ class FunHarnessApp(App):
     # ---- Tool generation streaming ----
 
     def _append_tool_gen(self, name: str, chunk: str):
-        """Show tool argument generation in progress (only for tool_write_file)."""
-        if name != "tool_write_file":
+        """Show long-running write/replace tools as soon as arguments stream."""
+        early_tools = {"tool_write_file", "tool_replace_in_file"}
+        if name not in early_tools:
             return
         self._finish_reasoning()
         self._hide_thinking()
-        if self._tool_gen_widget is None:
-            self._tool_gen_widget = ToolGenBlock()
+
+        buffer = self._pending_tool_arg_buffers.get(name, "") + chunk
+        self._pending_tool_arg_buffers[name] = buffer
+        call_markup = _format_tool_args_preview(buffer)
+
+        block = self._pending_tool_blocks.get(name)
+        if block is None:
+            risk = RISK_CONFIG.get("write", RISK_CONFIG["write"])["label"]
+            block = ToolCallBlock(call_markup, tool_name=name, risk_label=risk)
+            self._pending_tool_blocks[name] = block
             scroll = self.query_one("#chat-scroll", VerticalScroll)
-            scroll.mount(self._tool_gen_widget)
-        self._tool_gen_widget.set_tool_name(name)
-        if self._tool_gen_widget.append_chunk(chunk):
+            scroll.mount(block)
+            self._last_tool_block = block
+            self._last_tool_name = name
             self._scroll_bottom()
+            return
+
+        block.update_call_markup(call_markup)
+        self._last_tool_block = block
+        self._last_tool_name = name
+        self._scroll_bottom()
 
     def _finish_tool_gen(self):
         """Remove the tool generation preview."""
@@ -943,6 +966,15 @@ class FunHarnessApp(App):
         risk_label = rc["label"]
 
         call_markup = _format_tool_args_preview(preview)
+
+        existing = self._pending_tool_blocks.pop(name, None)
+        self._pending_tool_arg_buffers.pop(name, None)
+        if existing is not None:
+            existing.update_call_markup(call_markup)
+            self._last_tool_block = existing
+            self._last_tool_name = name
+            self._scroll_bottom()
+            return
 
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         block = ToolCallBlock(call_markup, tool_name=name, risk_label=risk_label)
@@ -1148,6 +1180,8 @@ class FunHarnessApp(App):
 
         self._update_status()
         self._last_tool_block = None
+        self._pending_tool_blocks.clear()
+        self._pending_tool_arg_buffers.clear()
         input_widget = self.query_one("#prompt-input", PromptInput)
         input_widget.disabled = False
         input_widget.focus()
