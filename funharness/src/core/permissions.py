@@ -4,7 +4,9 @@ FunHarness - Permission Management & Approval Flow
 Three-mode permission system, path/command policies, sandbox executor.
 """
 import os
+import platform
 import subprocess
+import time
 from enum import Enum
 from pathlib import Path
 
@@ -174,25 +176,61 @@ class SandboxExecutor:
             env.pop(var, None)
         return env
 
-    def execute(self, command: str) -> str:
+    def execute(self, command: str, should_interrupt=None) -> str:
         try:
-            result = subprocess.run(
-                command, shell=True, capture_output=True, text=True,
-                timeout=self.timeout, cwd=self.work_dir, env=self._build_safe_env(),
+            proc = subprocess.Popen(
+                command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, cwd=self.work_dir, env=self._build_safe_env(),
             )
+            deadline = None if self.timeout is None else time.monotonic() + self.timeout
+            try:
+                while True:
+                    if should_interrupt and should_interrupt():
+                        self._kill_tree(proc)
+                        proc.wait(timeout=5)
+                        return "Interrupted: command stopped by user"
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise subprocess.TimeoutExpired(command, self.timeout)
+                    try:
+                        stdout, stderr = proc.communicate(timeout=0.2)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
+            except subprocess.TimeoutExpired:
+                self._kill_tree(proc)
+                proc.wait(timeout=5)
+                return f"Error: command timed out ({self.timeout}s)"
+
             parts = []
-            if result.stdout:
-                parts.append(result.stdout)
-            if result.stderr:
-                parts.append(f"[stderr]\n{result.stderr}")
+            if stdout:
+                parts.append(stdout)
+            if stderr:
+                parts.append(f"[stderr]\n{stderr}")
             output = "\n".join(parts) if parts else "(no output)"
             if len(output) > self.max_output:
                 output = output[:self.max_output] + f"\n...(truncated, total {len(output)} chars)"
-            return f"[exit={result.returncode}]\n{output}"
-        except subprocess.TimeoutExpired:
-            return f"Error: command timed out ({self.timeout}s)"
+            return f"[exit={proc.returncode}]\n{output}"
         except Exception as e:
             return f"Execution failed: {e}"
+
+    @staticmethod
+    def _kill_tree(proc: subprocess.Popen):
+        """Kill the entire process tree (not just the shell parent)."""
+        try:
+            if platform.system() == "Windows":
+                # taskkill /T kills the whole tree, /F forces termination
+                subprocess.run(
+                    ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                    capture_output=True, timeout=5,
+                )
+            else:
+                import signal
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 # ---- Approval Flow ----

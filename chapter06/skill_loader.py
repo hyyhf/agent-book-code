@@ -108,14 +108,14 @@ class SkillLoader:
             self._scanned = True
             return
 
-        for path in sorted(self.skills_dir.glob("*.md")):
+        for path in sorted(self.skills_dir.glob("*/SKILL.md")):
             try:
                 text = path.read_text(encoding="utf-8")
             except (UnicodeDecodeError, PermissionError):
                 continue
 
             meta, body = _parse_frontmatter(text)
-            name = meta.get("name", path.stem)
+            name = meta.get("name", path.parent.name)
             desc = meta.get("description", "")
             tags = meta.get("tags", [])
             if isinstance(tags, str):
@@ -284,7 +284,8 @@ if __name__ == "__main__":
         skills_dir.mkdir(parents=True)
 
         # 技能 1: Python 测试
-        (skills_dir / "python_testing.md").write_text("""\
+        (skills_dir / "python-testing").mkdir()
+        (skills_dir / "python-testing" / "SKILL.md").write_text("""\
 ---
 name: Python Testing
 description: pytest testing patterns and best practices
@@ -315,7 +316,8 @@ def test_add(x, y, expected):
 """, encoding="utf-8")
 
         # 技能 2: Git 工作流
-        (skills_dir / "git_workflow.md").write_text("""\
+        (skills_dir / "git-workflow").mkdir()
+        (skills_dir / "git-workflow" / "SKILL.md").write_text("""\
 ---
 name: Git Workflow
 description: Common git commands and branching strategies
@@ -338,7 +340,8 @@ git rebase -i HEAD~3  # squash commits
 """, encoding="utf-8")
 
         # 技能 3: API 设计
-        (skills_dir / "api_design.md").write_text("""\
+        (skills_dir / "api-design").mkdir()
+        (skills_dir / "api-design" / "SKILL.md").write_text("""\
 ---
 name: REST API Design
 description: RESTful API design conventions and patterns
@@ -397,3 +400,14 @@ tags: [api, rest, http]
 
         print("\n--- 工具函数: load_skill('api') ---")
         print(load_skill("api")[:200] + "...")
+
+    # 6. 扫描真实项目目录中的技能
+    real_dir = Path(__file__).parent
+    real_loader = SkillLoader(str(real_dir))
+    real_skills = real_loader.list_skills()
+    print(f"\n--- 真实项目技能 ({real_dir / _SKILLS_DIR}) ---")
+    if real_skills:
+        for s in real_skills:
+            print(f"  {s['name']}: {s['description'][:60]}")
+    else:
+        print("  (none found)")

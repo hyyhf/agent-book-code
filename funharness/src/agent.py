@@ -4,6 +4,7 @@ FunHarness - Agent Engine
 Core agent loop as a class with callback-based integration for TUI.
 """
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from .core.context import (
     truncate_tool_results, compact_conversation, should_compact,
 )
 from .core.memory import init_memory, read_memory, save_memory, search_memory
+from .core.skills import SkillLoader
 from .core.session import Session, SessionManager
 from .core.permissions import (
     PermissionManager, PermissionMode, ApprovalFlow, SandboxExecutor, classify_risk,
@@ -31,7 +33,7 @@ from .core.observability import (
     FailurePattern, FailureType,
 )
 
-MAX_ITERATIONS = 25
+MAX_ITERATIONS = 100
 
 
 # ---- Extra tool functions registered on registry ----
@@ -167,6 +169,7 @@ class FunHarnessAgent:
         self.cost_tracker = CostTracker(model=MODEL)
         self.hook_registry = init_hooks()
         self.middleware_chain = init_middleware()
+        self.skill_loader = SkillLoader()
 
         # Observability
         self.tracer = Tracer()
@@ -187,14 +190,17 @@ class FunHarnessAgent:
         self.current_session = Session()
         self.current_session.messages = self.messages
         self.tool_calls_history = []
+        self._interrupt_event = threading.Event()
 
     def _build_system_prompt(self):
         memory_text = read_memory()
         task_summary = _task_list.summary() if _task_list else ""
+        skills_summary = self.skill_loader.skills_summary()
         extra_context = build_context_block()
         self._system_prompt = build_system_prompt(
             registry, mode=self.mode.value, extra_context=extra_context,
             memory_text=memory_text, task_summary=task_summary,
+            skills_summary=skills_summary,
         )
 
     def _emit_status(self, msg):
@@ -239,6 +245,7 @@ class FunHarnessAgent:
             ),
             "/hooks": lambda: self.hook_registry.list_hooks(),
             "/middleware": lambda: self.middleware_chain.list_middlewares(),
+            "/skills": lambda: self.skill_loader.skills_summary() or "No skills found.",
             "/tasks": lambda: (_task_list.summary() if _task_list else "No task list. Use /plan to create one."),
             "/next": lambda: self._handle_next(),
             "/progress": lambda: (_progress_tracker.read() if _progress_tracker else "(no progress tracker)"),
@@ -277,6 +284,7 @@ class FunHarnessAgent:
             "  /mode [m]   - Show/change permission mode (auto/suggest/approve)\n"
             "  /perms      - Show permission settings\n"
             "  /hooks      - List registered hooks\n"
+            "  /skills     - List available skills\n"
             "  /middleware  - List middleware chain\n"
             "  /plan <req> - Generate task list from requirement\n"
             "  /tasks      - View task list\n"
@@ -376,12 +384,28 @@ class FunHarnessAgent:
         self.current_session.messages = self.messages
         self.tool_calls_history.clear()
 
+    def request_interrupt(self):
+        """Ask the current agent turn and any running command tool to stop."""
+        self._interrupt_event.set()
+
+    def clear_interrupt(self):
+        """Reset interrupt state before a new turn."""
+        self._interrupt_event.clear()
+
+    def is_interrupted(self) -> bool:
+        return self._interrupt_event.is_set()
+
+    def _raise_if_interrupted(self):
+        if self.is_interrupted():
+            raise InterruptedError("Agent run interrupted by user")
+
     def run(self, user_input: str):
         """Execute one agent turn with the given user input.
 
         This is an async-compatible generator that yields events:
         Uses callbacks (on_token, on_tool_call, on_tool_result, on_status).
         """
+        self.clear_interrupt()
         self.cost_tracker.mark_turn_start()
         self.messages.append({"role": "user", "content": user_input})
         tools = registry.get_openai_schemas()
@@ -390,6 +414,7 @@ class FunHarnessAgent:
                                            metadata={"input": user_input[:100]})
 
         for iteration in range(1, MAX_ITERATIONS + 1):
+            self._raise_if_interrupted()
             # Middleware chain
             mw_context = {
                 "messages": self.messages, "iteration": iteration,
@@ -416,6 +441,7 @@ class FunHarnessAgent:
                     on_reasoning_token=self.on_reasoning_token,
                     on_tool_gen=self.on_tool_gen,
                     cost_tracker=self.cost_tracker,
+                    should_interrupt=self.is_interrupted,
                 )
                 self.messages.append(msg)
                 break
@@ -449,6 +475,7 @@ class FunHarnessAgent:
                 on_reasoning_token=_on_reasoning_wrapper,
                 on_tool_gen=self.on_tool_gen,
                 cost_tracker=self.cost_tracker,
+                should_interrupt=self.is_interrupted,
             )
             self.messages.append(msg)
 
@@ -474,6 +501,7 @@ class FunHarnessAgent:
 
             # Process tool calls
             for tc in msg["tool_calls"]:
+                self._raise_if_interrupted()
                 name = tc["function"]["name"]
                 args_str = tc["function"]["arguments"]
 
@@ -491,6 +519,7 @@ class FunHarnessAgent:
                     self.on_tool_call(name, preview, risk)
 
                 result, hook_feedback = self._execute_tool(name, args_str)
+                self._raise_if_interrupted()
 
                 display = result if len(result) <= 200 else result[:200] + "...(truncated)"
                 if self.on_tool_result:
@@ -534,6 +563,8 @@ class FunHarnessAgent:
         except json.JSONDecodeError as e:
             return f"Argument parse error: {e}", ""
 
+        self._raise_if_interrupted()
+
         func = registry.get_function(tool_name)
         if not func:
             return f"Unknown tool: {tool_name}", ""
@@ -562,10 +593,17 @@ class FunHarnessAgent:
         tool_span = self.tracer.start_span(SpanKind.TOOL_CALL, tool_name)
 
         if tool_name == "tool_run_command":
-            result = self.approval_flow.sandbox.execute(args.get("command", ""))
+            result = self.approval_flow.sandbox.execute(
+                args.get("command", ""),
+                should_interrupt=self.is_interrupted,
+            )
         else:
             try:
+                self._raise_if_interrupted()
                 result = str(func(**args))
+                self._raise_if_interrupted()
+            except InterruptedError:
+                raise
             except Exception as e:
                 result = f"Tool execution failed ({tool_name}): {e}"
 

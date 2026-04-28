@@ -196,22 +196,40 @@ def tool_run_command(command: str) -> str:
     Args:
         command: Shell command string to execute
     """
+    import platform
+
     try:
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True,
-            timeout=30, cwd=os.getcwd(),
+        proc = subprocess.Popen(
+            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, cwd=os.getcwd(),
         )
+        try:
+            stdout, stderr = proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            # Kill entire process tree on Windows
+            try:
+                if platform.system() == "Windows":
+                    subprocess.run(
+                        ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                        capture_output=True, timeout=5,
+                    )
+                else:
+                    import signal
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                proc.kill()
+            proc.wait(timeout=5)
+            return "Error: command timed out (30s)"
+
         parts = []
-        if result.stdout:
-            parts.append(result.stdout)
-        if result.stderr:
-            parts.append(f"[stderr]\n{result.stderr}")
+        if stdout:
+            parts.append(stdout)
+        if stderr:
+            parts.append(f"[stderr]\n{stderr}")
         output = "\n".join(parts) if parts else "(no output)"
         if len(output) > 10000:
             output = output[:10000] + f"\n...(truncated, total {len(output)} chars)"
-        return f"[exit={result.returncode}]\n{output}"
-    except subprocess.TimeoutExpired:
-        return "Error: command timed out (30s)"
+        return f"[exit={proc.returncode}]\n{output}"
     except Exception as e:
         return f"Command failed: {e}"
 

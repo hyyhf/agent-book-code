@@ -237,6 +237,48 @@ def truncate_tool_results(messages: list[dict]) -> list[dict]:
     return messages
 
 
+def _tool_call_ids(msg: dict) -> set[str]:
+    return {
+        tc.get("id", "")
+        for tc in msg.get("tool_calls", []) or []
+        if tc.get("id")
+    }
+
+
+def _recent_messages_with_valid_tool_boundaries(
+    conversation: list[dict],
+    keep_recent: int,
+) -> list[dict]:
+    """Return a recent suffix without splitting assistant/tool-call groups."""
+    start = max(0, len(conversation) - keep_recent)
+
+    while start < len(conversation) and conversation[start].get("role") == "tool":
+        tool_start = start
+        while tool_start > 0 and conversation[tool_start - 1].get("role") == "tool":
+            tool_start -= 1
+
+        assistant_idx = tool_start - 1
+        if assistant_idx < 0:
+            start += 1
+            continue
+
+        assistant = conversation[assistant_idx]
+        expected_ids = _tool_call_ids(assistant)
+        actual_ids = {
+            msg.get("tool_call_id", "")
+            for msg in conversation[tool_start:start + 1]
+            if msg.get("tool_call_id")
+        }
+
+        if assistant.get("role") == "assistant" and actual_ids.issubset(expected_ids):
+            start = assistant_idx
+            break
+
+        start += 1
+
+    return conversation[start:]
+
+
 def compact_conversation(messages: list[dict], model: str = MODEL) -> list[dict]:
     if len(messages) < 6:
         return messages
@@ -245,8 +287,8 @@ def compact_conversation(messages: list[dict], model: str = MODEL) -> list[dict]
     keep_recent = 4
     if len(conversation) <= keep_recent:
         return messages
-    old_messages = conversation[:-keep_recent]
-    recent_messages = conversation[-keep_recent:]
+    recent_messages = _recent_messages_with_valid_tool_boundaries(conversation, keep_recent)
+    old_messages = conversation[:len(conversation) - len(recent_messages)]
 
     lines = []
     for msg in old_messages:

@@ -53,7 +53,8 @@ def call_with_retry(messages, tools, stream=False, max_retries=3):
 
 
 def process_stream_response(stream, on_token=None, on_reasoning_token=None,
-                            on_tool_gen=None, cost_tracker=None):
+                            on_tool_gen=None, cost_tracker=None,
+                            should_interrupt=None):
     """Process streaming response, call on_token for each text chunk.
 
     Args:
@@ -72,6 +73,12 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
     tool_calls_data = {}
 
     for chunk in stream:
+        if should_interrupt and should_interrupt():
+            close = getattr(stream, "close", None)
+            if close:
+                close()
+            raise InterruptedError("Agent run interrupted")
+
         if hasattr(chunk, "usage") and chunk.usage and cost_tracker:
             cost_tracker.update(chunk.usage)
 
@@ -131,4 +138,3 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
         msg["tool_calls"] = tc_list
 
     return msg
-

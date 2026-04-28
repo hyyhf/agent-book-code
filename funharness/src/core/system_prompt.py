@@ -83,6 +83,7 @@ def build_system_prompt(
     extra_context: str = "",
     memory_text: str = "",
     task_summary: str = "",
+    skills_summary: str = "",
 ) -> str:
     """Assemble the full system prompt."""
     identity = IDENTITY_BLOCK.format(mode=mode)
@@ -103,6 +104,9 @@ def build_system_prompt(
 
     if extra_context:
         sections.append(extra_context)
+
+    if skills_summary:
+        sections.append(f"# Skills\n{skills_summary}")
 
     if memory_text and memory_text != "(no memories saved yet)":
         summary = memory_text[:2000]

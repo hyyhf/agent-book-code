@@ -9,25 +9,27 @@ from textual.theme import Theme
 #  Color Palette
 # ----------------------------------------------------------------
 
-OCHRE_BRIGHT = "#D4A017"
+OCHRE_BRIGHT = "#E8C847"
 OCHRE_PRIMARY = "#C68E17"
-OCHRE_DEEP = "#B8860B"
-OCHRE_DIM = "#8B6914"
-OCHRE_MUTED = "#5C4A1C"
+OCHRE_DEEP = "#9E6F0B"
+OCHRE_DIM = "#7A5C18"
+OCHRE_MUTED = "#514627"
 
-SURFACE_DARK = "#1A1510"
-SURFACE_MID = "#231E14"
-SURFACE_LIGHT = "#2E2618"
-PANEL_BG = "#1E1A12"
+SURFACE_DARK = "#12100D"
+SURFACE_MID = "#1B1813"
+SURFACE_LIGHT = "#252016"
+SURFACE_RAISED = "#211D17"
+PANEL_BG = "#181510"
 
 TEXT_PRIMARY = "#E8DCC8"
-TEXT_SECONDARY = "#A89878"
-TEXT_DIM = "#786848"
+TEXT_SECONDARY = "#B5A98F"
+TEXT_DIM = "#7F735C"
 
 SUCCESS_COLOR = "#7BA05B"
 ERROR_COLOR = "#C75050"
 WARNING_COLOR = "#D4A017"
 INFO_COLOR = "#5B9BD5"
+ACCENT_COOL = "#6EA6A1"
 
 # ----------------------------------------------------------------
 #  Icons (ASCII-safe unicode symbols, NOT emoji)
