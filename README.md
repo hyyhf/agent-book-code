@@ -6,7 +6,7 @@
 
 **一本带你亲手打造类 “Claw” AI Agent 的实战书**
 
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/) [![uv](https://img.shields.io/badge/uv-package%20manager-7C3AED?style=for-the-badge&logo=astral&logoColor=white)](https://github.com/astral-sh/uv) [![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI%20Compatible-10a37f?style=for-the-badge&logo=openai&logoColor=white)](https://openai.com) [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE) [![Stars](https://img.shields.io/github/stars/hyyhf/agent-book-code?style=for-the-badge&logo=github&logoColor=white)](https://github.com/hyyhf/agent-book-code)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/) [![uv](https://img.shields.io/badge/uv-package%20manager-7C3AED?style=for-the-badge&logo=astral&logoColor=white)](https://github.com/astral-sh/uv) [![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI%20Compatible-10a37f?style=for-the-badge&logo=openai&logoColor=white)](https://openai.com) [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE) [![GitHub stars](https://img.shields.io/github/stars/hyyhf/agent-book-code?style=for-the-badge&logo=github&logoColor=white&v=1)](https://github.com/hyyhf/agent-book-code)
 
 *从第一个 LLM API 调用开始，一层一层搭出真正能工作的 AI 编程智能体*
 
@@ -408,7 +408,7 @@ uv run fh feishu
 
 | 消息触发与工具调用 | Agent 回复与结果 |
 |:---:|:---:|
-| <img src="assets/feishu_run_page_1.jpg" width="420" /> | <img src="assets/feishu_runpage_2.jpg" width="420" /> |
+| <img src="assets/feishu_run_page_1.jpg" width="200" /> | <img src="assets/feishu_runpage_2.jpg" width="200" /> |
 
 </div>
 
@@ -444,7 +444,7 @@ uv run fh feishu
 
 **如果这本书或这个项目对你有帮助，欢迎点个 Star**
 
-[![GitHub Stars](https://img.shields.io/github/stars/hyyhf/agent-book-code?style=for-the-badge&logo=github&color=D4A017)](https://github.com/hyyhf/agent-book-code)
+<a href="https://github.com/hyyhf/agent-book-code"><img src="https://img.shields.io/github/stars/hyyhf/agent-book-code?style=for-the-badge&color=DDB88B&logo=github" alt="GitHub stars"></a>
 
 *Made with love for everyone who wants to understand AI agents from the ground up.*
 
