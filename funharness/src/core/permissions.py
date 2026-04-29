@@ -23,12 +23,20 @@ RISK_LEVELS = {
         "tool_read_memory", "tool_search_memory", "tool_list_skills",
         "tool_load_skill", "tool_view_tasks", "tool_next_task",
         "tool_read_progress", "tool_background_status", "tool_web_fetch",
+        "tool_task_get", "tool_task_list", "tool_runtime_status",
+        "tool_runtime_output", "tool_schedule_list", "tool_team_list",
+        "tool_team_inbox",
     ],
     "write": [
         "tool_write_file", "tool_replace_in_file", "tool_save_memory",
         "tool_complete_task", "tool_fail_task",
+        "tool_task_create", "tool_task_update", "tool_schedule_create",
+        "tool_schedule_delete", "tool_team_create", "tool_team_send",
     ],
-    "execute": ["tool_run_command"],
+    "execute": [
+        "tool_run_command", "tool_runtime_run", "tool_subagent_run",
+        "tool_team_delegate",
+    ],
     "web": ["tool_web_search"],
 }
 
@@ -64,7 +72,7 @@ class PathPolicy:
             if target == d or d in target.parents:
                 return False, f"Path '{filepath}' is in protected directory '{d}'"
         for d in self.allowed:
-            if target == d or d in target.parents or target in d.parents:
+            if target == d or d in target.parents:
                 return True, "Allowed"
         return False, f"Path '{filepath}' is outside allowed directories"
 
@@ -178,10 +186,18 @@ class SandboxExecutor:
 
     def execute(self, command: str, should_interrupt=None) -> str:
         try:
-            proc = subprocess.Popen(
-                command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, cwd=self.work_dir, env=self._build_safe_env(),
-            )
+            popen_kwargs = {
+                "shell": True,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+                "cwd": self.work_dir,
+                "env": self._build_safe_env(),
+            }
+            if platform.system() != "Windows":
+                popen_kwargs["start_new_session"] = True
+
+            proc = subprocess.Popen(command, **popen_kwargs)
             deadline = None if self.timeout is None else time.monotonic() + self.timeout
             try:
                 while True:

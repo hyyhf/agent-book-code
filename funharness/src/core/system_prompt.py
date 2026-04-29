@@ -27,6 +27,16 @@ Task management:
 - Use tool_view_tasks to see the current task list and progress.
 - Use tool_next_task to get the next pending task.
 - After completing a task, use tool_complete_task to mark it done.
+- Durable tasks are work goals; runtime tasks are active execution slots.
+
+Agent teams:
+- Use tool_team_create for persistent teammates with a role and inbox.
+- Use tool_team_delegate for asynchronous teammate work.
+- Use tool_subagent_run for one-shot isolated analysis.
+
+Scheduling:
+- Use tool_schedule_create for future prompts. Schedule notifications return
+  to the main loop before model calls.
 
 Security awareness:
 - You operate under permission mode ({mode}).

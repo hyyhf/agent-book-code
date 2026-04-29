@@ -5,6 +5,7 @@ Textual-based terminal UI inspired by Claude Code.
 Features: bordered tool calls, streaming with accent, thinking animation.
 """
 from __future__ import annotations
+import json
 import threading
 import time
 
@@ -57,12 +58,14 @@ class StatusBar(Static):
     }}
     """
 
-    def update_info(self, mode="suggest", messages=0, tokens=0, cost="\u00a50.0000"):
+    def update_info(self, mode="suggest", messages=0, tokens=0, cost="\u00a50.0000",
+                    team=0, runtime=0, schedules=0):
         self.update(
             f" [{OCHRE_PRIMARY}]FunHarness[/] | "
             f"Mode: [bold {OCHRE_BRIGHT}]{mode}[/] | "
             f"Msgs: {messages} | "
             f"~{tokens:,} tok | "
+            f"Team: {team} | Bg: {runtime} | Sched: {schedules} | "
             f"[{ACCENT_COOL}]Cost: {cost}[/]"
         )
 
@@ -488,7 +491,7 @@ def _format_tool_args_preview(preview: str) -> str:
     """Format tool arguments as a compact one-line tree."""
     try:
         parsed = json.loads(preview)
-    except Exception:
+    except json.JSONDecodeError:
         rendered = preview
     else:
         rendered = json.dumps(parsed, ensure_ascii=False)
@@ -685,8 +688,9 @@ class FunHarnessApp(App):
         self._tool_gen_widget: ToolGenBlock | None = None
         self._last_tool_block: ToolCallBlock | None = None
         self._last_tool_name: str = ""
-        self._pending_tool_blocks: dict[str, ToolCallBlock] = {}
-        self._pending_tool_arg_buffers: dict[str, str] = {}
+        self._pending_tool_blocks: dict[int, ToolCallBlock] = {}
+        self._pending_tool_arg_buffers: dict[int, str] = {}
+        self._pending_tool_indices_by_name: dict[str, list[int]] = {}
         self._last_stream_render_at = 0.0
         # Permission mode cycling
         self._permission_modes = ["auto", "suggest", "approve"]
@@ -767,7 +771,7 @@ class FunHarnessApp(App):
         self._safe_callback(self._show_reasoning_start)
 
     def _on_tool_gen_sync(self, index: int, name: str, chunk: str):
-        self._safe_callback(self._append_tool_gen, name, chunk)
+        self._safe_callback(self._append_tool_gen, index, name, chunk)
 
     def _on_tool_call_sync(self, name: str, preview: str, risk: str):
         self._safe_callback(self._show_tool_call, name, preview, risk)
@@ -878,7 +882,7 @@ class FunHarnessApp(App):
 
     # ---- Tool generation streaming ----
 
-    def _append_tool_gen(self, name: str, chunk: str):
+    def _append_tool_gen(self, index: int, name: str, chunk: str):
         """Show long-running write/replace tools as soon as arguments stream."""
         early_tools = {"tool_write_file", "tool_replace_in_file"}
         if name not in early_tools:
@@ -886,15 +890,19 @@ class FunHarnessApp(App):
         self._finish_reasoning()
         self._hide_thinking()
 
-        buffer = self._pending_tool_arg_buffers.get(name, "") + chunk
-        self._pending_tool_arg_buffers[name] = buffer
+        buffer = self._pending_tool_arg_buffers.get(index, "") + chunk
+        self._pending_tool_arg_buffers[index] = buffer
         call_markup = _format_tool_args_preview(buffer)
 
-        block = self._pending_tool_blocks.get(name)
+        indices = self._pending_tool_indices_by_name.setdefault(name, [])
+        if index not in indices:
+            indices.append(index)
+
+        block = self._pending_tool_blocks.get(index)
         if block is None:
             risk = RISK_CONFIG.get("write", RISK_CONFIG["write"])["label"]
             block = ToolCallBlock(call_markup, tool_name=name, risk_label=risk)
-            self._pending_tool_blocks[name] = block
+            self._pending_tool_blocks[index] = block
             scroll = self.query_one("#chat-scroll", VerticalScroll)
             scroll.mount(block)
             self._last_tool_block = block
@@ -967,8 +975,16 @@ class FunHarnessApp(App):
 
         call_markup = _format_tool_args_preview(preview)
 
-        existing = self._pending_tool_blocks.pop(name, None)
-        self._pending_tool_arg_buffers.pop(name, None)
+        existing = None
+        indices = self._pending_tool_indices_by_name.get(name, [])
+        while indices:
+            pending_index = indices.pop(0)
+            existing = self._pending_tool_blocks.pop(pending_index, None)
+            self._pending_tool_arg_buffers.pop(pending_index, None)
+            if existing is not None:
+                break
+        if not indices:
+            self._pending_tool_indices_by_name.pop(name, None)
         if existing is not None:
             existing.update_call_markup(call_markup)
             self._last_tool_block = existing
@@ -1072,6 +1088,9 @@ class FunHarnessApp(App):
             status.update_info(
                 mode=info["mode"], messages=info["messages"],
                 tokens=info["tokens"], cost=cost_str,
+                team=info.get("teammates", 0),
+                runtime=info.get("runtime_tasks", 0),
+                schedules=info.get("schedules", 0),
             )
 
     # ---- Event Handlers ----
@@ -1182,6 +1201,7 @@ class FunHarnessApp(App):
         self._last_tool_block = None
         self._pending_tool_blocks.clear()
         self._pending_tool_arg_buffers.clear()
+        self._pending_tool_indices_by_name.clear()
         input_widget = self.query_one("#prompt-input", PromptInput)
         input_widget.disabled = False
         input_widget.focus()

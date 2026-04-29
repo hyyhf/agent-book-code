@@ -199,10 +199,17 @@ def tool_run_command(command: str) -> str:
     import platform
 
     try:
-        proc = subprocess.Popen(
-            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, cwd=os.getcwd(),
-        )
+        popen_kwargs = {
+            "shell": True,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "cwd": os.getcwd(),
+        }
+        if platform.system() != "Windows":
+            popen_kwargs["start_new_session"] = True
+
+        proc = subprocess.Popen(command, **popen_kwargs)
         try:
             stdout, stderr = proc.communicate(timeout=30)
         except subprocess.TimeoutExpired:

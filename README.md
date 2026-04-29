@@ -21,10 +21,10 @@
 ## 封面
 
 <div align="center">
-  <img src="assets/ebook_cover.png" alt="Book Cover" width="600" />
+  <img src="assets/ebook_cover.png" alt="Book Cover" width="700" />
 </div>
 
-> [!note] 注
+> [!quote]
 > 真正理解 Agent 的方式，不是只使用 Agent，而是亲手把它构建出来。
 
 
@@ -50,9 +50,10 @@
 
 这也是本书与普通示例代码最大的区别：读者不是“看完一个项目”，而是跟着项目的演进过程，亲手把一个类 **“Claw” AI Agent** 搭出来。每一章都有对应的中间版本，每一次新增能力都能被运行、对比和修改。到最后，FunHarness 不只是代码仓库里的产物，而是读者理解 Agent 工程化之后的第一个实战作品。
 
-> [!check] 
+> [!abstract]
 > 本书的核心信念：**理解 > 使用**。
 > 真正掌握 Agent 原理的最佳方式，是亲手把每一层抽象从零实现一遍。
+
 
 <div align="center">
 
@@ -98,6 +99,7 @@
 | **Chapter 10** | 可观测性与评估：追踪、日志与成本看板 | `observability.py` `evaluation.py` **`funharness_v08.py`** | `uv run chapter10/observability.py` |
 | **Chapter 12** | OpenAI Agents SDK：框架对比与实战 | `01_basic_agent.py` `02_handoff.py` `03_guardrails.py` `04_tracing.py` `05_study_group.py` | `uv run chapter12/01_basic_agent.py` |
 
+> [!tip]
 > **说明**：每章中加粗的 `funharness_vXX.py` 是该章对应版本的 FunHarness 完整实现，可独立运行。最终的完整版本即本仓库的 [`funharness/`](./funharness/) 目录。
 
 ### 环境准备
@@ -151,7 +153,7 @@ uv run chapter09/multi_agent.py
 <div align="center">
 <img src="assets/funharness_logo.png" alt="FunHarness Logo" width="350" />
 
-[![Version](https://img.shields.io/badge/FunHarness-v1.0-D4A017?style=for-the-badge&logoColor=white)](#) [![TUI](https://img.shields.io/badge/Interface-Textual%20TUI-14532d?style=for-the-badge&logo=gnometerminal&logoColor=white)](https://github.com/Textualize/textual) [![Feishu](https://img.shields.io/badge/Channel-Feishu%20Bot-00B4AB?style=for-the-badge&logoColor=white)](./docs/feishu_channel.zh.md) [![Tools](https://img.shields.io/badge/Built--in%20Tools-15%2B-6366F1?style=for-the-badge)](#工具系统) [![Modes](https://img.shields.io/badge/Permission%20Modes-auto%20%7C%20suggest%20%7C%20approve-EF4444?style=for-the-badge)](#权限系统)
+[![Version](https://img.shields.io/badge/FunHarness-v1.0-D4A017?style=for-the-badge&logoColor=white)](#) [![TUI](https://img.shields.io/badge/Interface-Textual%20TUI-14532d?style=for-the-badge&logo=gnometerminal&logoColor=white)](https://github.com/Textualize/textual) [![Feishu](https://img.shields.io/badge/Channel-Feishu%20Bot-00B4AB?style=for-the-badge&logoColor=white)](./docs/feishu_channel.zh.md) [![Tools](https://img.shields.io/badge/Built--in%20Tools-30%2B-6366F1?style=for-the-badge)](#工具系统) [![Modes](https://img.shields.io/badge/Permission%20Modes-auto%20%7C%20suggest%20%7C%20approve-EF4444?style=for-the-badge)](#权限系统)
 
 </div>
 
@@ -161,6 +163,7 @@ FunHarness 是本书的**核心实战项目**，也是贯穿全书的主线。�
 
 更重要的是，FunHarness 是本书内容的**升华和进一步实战**。前面的章节讲原理、拆机制、写小例子；FunHarness 则把这些知识重新装配成一个可用产品。它既可以作为课程演示项目，也可以作为个人试验台，还可以作为读者打造自己类 **“Claw” AI Agent** 的起点。
 
+> [!tip]
 > **FunHarness = 一个你自己能读懂、改得动的 Claude Code**
 > - 一个面向学习和实验的 mini Claude Code / OpenClaw 风格 AI Agent。
 > - 它不追求功能最全，而是追求每一行代码都能讲清楚、每一个能力都能被复刻。这正是“从零构建”的意义。
@@ -203,20 +206,43 @@ funharness/   完整生产版本（TUI + 飞书通道）
 
 ---
 
+### 功能更新
+
+> [!note] News
+> - **2026-04-29 —— 补充Agent Teams：**
+>   - 本次更新补齐了 `FunHarness` 的 **Agent Teams / SubAgent、持久任务系统、后台运行时与定时调度** 能力，让它从单一对话助手升级为可以分工、排期、后台执行的 mini Agent 工作台。
+
+| 更新方向 | 新增能力 | 常用入口 |
+|----------|----------|----------|
+| **Agent Teams** | 创建长期队友、维护队友名册、写入 inbox、异步委派任务，适合把审查、实现、验证拆给不同角色处理 | `/team`、`/team create`、`/delegate`、`tool_team_*` |
+| **SubAgent** | 一次性隔离运行子 Agent，适合独立分析、交叉检查、生成候选方案，不污染主会话上下文 | `tool_subagent_run` |
+| **持久任务图** | 任务支持 `owner`、依赖关系、ready 判断、状态流转、备注与进度落盘，完成任务后自动解锁后续任务 | `/plan`、`/task`、`/tasks`、`/next`、`/done` |
+| **后台运行时** | 慢命令可以进入后台槽位运行，完整输出保存到 `.funharness/runtime/`，完成后通过事件回到主循环 | `/bg run`、`/bg output`、`tool_runtime_*` |
+| **定时调度** | 支持未来时间、`in 10m` 和简化 cron，将 prompt 安排到指定时间触发 | `/schedule create`、`/schedule`、`tool_schedule_*` |
+| **TUI 状态展示** | 底部状态栏同步展示 Team、后台任务、调度数量；并修复并行同名工具调用的预览串线问题 | TUI 状态栏、工具流式预览 |
+| **安全与稳定性** | 修复工作区路径逃逸、POSIX 进程组超时清理、跨会话任务状态串扰、JSON 预览失效等问题 | 权限系统、Sandbox、TUI |
+
+新增功能保持 mini 项目的实现风格：核心状态都落在 `.funharness/` 下，命令行、TUI 与工具调用共享同一套能力，方便学习、调试和继续裁剪扩展。
+
+---
+
 ### 核心功能
 
 | 功能模块 | 说明 |
 |----------|------|
 | **Agent Loop** | 流式响应、工具调用、迭代循环、中断支持，最多 100 轮自动推进 |
 | **工具系统** | 装饰器注册，自动从 docstring 生成 OpenAI Function Calling schema |
-| **内置工具 (15+)** | 文件读/写/替换、Shell 命令、目录列表、正则搜索、网页抓取、网页搜索、记忆读写、任务管理 |
+| **内置工具 (30+)** | 文件读/写/替换、Shell 命令、目录列表、正则搜索、网页抓取、网页搜索、记忆读写、任务管理、后台运行、定时调度、多 Agent 协作 |
 | **上下文管理** | Token 估算、自动 compact、工具结果截断，防止 context 爆炸 |
 | **持久记忆** | `.funharness/MEMORY.md` 跨会话记忆，支持关键词搜索与追加 |
 | **技能系统** | `skills/<name>/SKILL.md` 自动发现，注入系统提示，`/skills` 查看 |
 | **会话管理** | 自动保存/恢复对话，`.funharness/sessions/` 存储历史 |
 | **权限系统** | `auto` / `suggest` / `approve` 三档，读写操作分类，`Shift+Tab` 实时切换 |
 | **审批流** | `approve` 模式下弹出审批 UI，Allow / Deny 交互按钮 |
-| **任务规划** | `/plan <需求>` 生成 JSON 任务列表，`/next` 获取下一项，自动追踪进度 |
+| **持久任务图** | `/plan <需求>` 生成任务图，支持依赖、owner、ready 判断、完成后自动解锁后续任务，并写入 `PROGRESS.md` |
+| **后台运行时** | `tool_runtime_run` / `/bg run` 将慢命令放入后台执行槽位，完整输出落盘，摘要通过事件队列回到主循环 |
+| **定时调度** | `tool_schedule_create` / `/schedule create` 记录未来触发的 prompt，支持 `in 10m`、ISO 时间和简化 cron |
+| **SubAgent / Agent Team** | `tool_subagent_run` 适合一次性隔离分析；`tool_team_create` / `/delegate` 支持长期队友、inbox 和异步委派 |
 | **Hooks / Middleware** | Pre/Post Tool 钩子、中间件链，无侵入地扩展 agent 行为 |
 | **可观测性** | 结构化日志、Span 追踪、成本看板、失败模式分析、一键导出 |
 | **TUI 界面** | 基于 Textual 的终端 UI，流式渲染、Markdown 展示、工具块边框 |
@@ -233,7 +259,7 @@ funharness/
     ├── agent.py             # 核心 Agent 类（FunHarnessAgent）
     ├── __main__.py          # 入口：fh 命令 / fh feishu 命令
     ├── core/
-    │   ├── tools.py         # ToolRegistry + 15 个内置工具
+    │   ├── tools.py         # ToolRegistry + 30+ 个内置工具
     │   ├── llm.py           # LLM 调用、流式处理、重试
     │   ├── context.py       # Token 估算、compact、截断
     │   ├── memory.py        # 持久记忆读写
@@ -241,7 +267,10 @@ funharness/
     │   ├── session.py       # 会话序列化与管理
     │   ├── permissions.py   # 三模式权限 + 审批流 + Sandbox
     │   ├── hooks.py         # Pre/Post Tool 钩子系统
-    │   ├── tasks.py         # 任务规划、进度追踪、Git 提交
+    │   ├── tasks.py         # 持久任务图、依赖、owner、进度追踪、Git 提交
+    │   ├── runtime.py       # 后台运行时任务、通知队列、输出落盘
+    │   ├── schedule.py      # 定时调度记录、未来触发、调度通知
+    │   ├── team.py          # SubAgent、持久队友、名册、inbox、委派
     │   ├── observability.py # 追踪、日志、成本看板、失败分析
     │   └── system_prompt.py # 分层系统提示构建
     ├── tui/
@@ -254,7 +283,10 @@ funharness/
 defaultspace/                # Agent 默认工作区（fh 启动后 chdir 至此）
 └── .funharness/
     ├── MEMORY.md            # 持久记忆文件
-    ├── tasks.json           # 任务列表
+    ├── tasks.json           # 持久任务图
+    ├── runtime/             # 后台运行时任务状态与完整输出
+    ├── schedules.json       # 定时调度记录
+    ├── team/                # 队友名册、inbox 与执行历史
     ├── sessions/            # 历史会话存储
     └── skills/              # 技能目录（每个子目录一个 skill）
         ├── karpathy-guidelines/SKILL.md
@@ -334,10 +366,24 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 | `/hooks` | 列出已注册的 Hooks |
 | `/middleware` | 列出中间件链 |
 | `/plan <需求描述>` | 生成 JSON 任务列表并保存 |
+| `/task create <标题>` | 手动创建一条持久任务 |
+| `/task get <T1>` | 查看单条任务的完整 JSON 状态 |
+| `/task update <T1> status=<状态> owner=<成员> notes=<备注>` | 更新任务状态、负责人或备注 |
 | `/tasks` | 查看当前任务列表与完成进度 |
 | `/next` | 获取下一个待执行任务详情 |
 | `/done <T1> [files]` | 标记任务完成并记录产出文件 |
 | `/progress` | 查看进度追踪文件 |
+| `/team` | 查看当前 Agent Team 名册 |
+| `/team create <name> <role> [instructions]` | 创建或更新一个长期队友 |
+| `/team inbox <name>` | 查看队友 inbox |
+| `/delegate <name> <任务描述>` | 将工作异步委派给某个队友 |
+| `/bg` | 查看后台 runtime task 状态 |
+| `/bg run <command>` | 在后台运行慢命令，主循环可继续工作 |
+| `/bg output <runtime_id>` | 查看后台任务完整输出 |
+| `/schedule` | 查看定时调度列表 |
+| `/schedule create <name> <when> <prompt>` | 创建定时 prompt，例如 `in 10m` 或 `*/5 * * * *` |
+| `/schedule delete <job_id>` | 删除调度记录 |
+| `/events` | 手动拉取 runtime / schedule 事件 |
 | `/trace` | 显示 Span 追踪时间线与汇总 |
 | `/logs` | 显示最近 15 条结构化日志 |
 | `/dashboard` | 显示成本与 Token 看板 |
@@ -345,6 +391,51 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 | `/export` | 导出追踪、日志和成本数据到 `.funharness/traces/` |
 | `clear` | 清空对话（保存当前会话后重置） |
 | `quit` | 退出 FunHarness |
+
+#### 示例：用 Agent Team 完成一个小练习
+
+**给学生演示如何做一个待办清单 CLI 小项目**。你可以把下面几行直接输入到 FunHarness 的 TUI 里，观察任务如何被拆分、委派、后台执行和定时提醒。
+
+```text
+# 第 1 步：让主 Agent 先把练习拆成可执行任务
+/plan 做一个 todo.py 命令行工具，支持添加待办、列出待办、标记完成，并补充简单测试
+
+# 第 2 步：查看任务板。读者可以看到每个任务的编号、状态和负责人
+/tasks
+
+# 第 3 步：创建一个“代码助教”，专门检查代码是否容易讲清楚
+/team create teacher 教学助教 关注代码是否适合初学者理解，指出命名、结构和注释是否清楚
+
+# 第 4 步：把审查工作交给这个助教。主 Agent 仍然可以继续和你对话
+/delegate teacher 检查当前 todo.py 练习方案是否适合课堂讲解，并给出改进建议
+
+# 第 5 步：查看后台任务。委派给队友的工作会显示在这里
+/bg
+
+# 第 6 步：手动拉取完成事件，看看队友是否已经给出反馈
+/events
+
+# 第 7 步：如果项目里有测试，可以把测试放到后台跑
+/bg run pytest -q
+
+# 第 8 步：再次查看后台列表。复制其中显示的运行编号，再看完整输出
+/bg
+# 下面的 run_ab12cd34 是示例编号；实际使用时换成 /bg 里显示的编号
+/bg output run_ab12cd34
+
+# 第 9 步：安排一个提醒。10 分钟后，FunHarness 会提醒你回头检查测试和队友反馈
+/schedule create 课后检查 in 10m 检查 todo.py 的测试结果和教学助教反馈
+/schedule
+```
+
+这组命令背后的含义可以这样理解：
+
+- **`/plan` 和 `/tasks`**：把一个模糊目标变成任务板，适合教学时展示“Agent 如何拆任务”。
+- **`/team create` 和 `/delegate`**：创建一个有明确职责的队友，再把某件事交给它异步处理。
+- **`/bg run` 和 `/bg output`**：把测试、构建这类耗时命令放到后台，不阻塞当前对话。
+- **`/schedule create`**：给未来某个时间点安排提醒或复查，适合课堂演示“Agent 可以持续跟进任务”。
+
+只需要先记住一个顺序：**先 `/plan` 拆任务，再 `/team create` 建队友，然后 `/delegate` 分工，最后用 `/bg` 和 `/schedule` 跟踪执行情况**。
 
 <div align="center"><img src="assets/chinese-divider-transparent-cropped.png" width="90%" /></div>
 
@@ -432,6 +523,12 @@ uv run fh feishu
 
 ---
 
+## 许可证
+
+本项目采用 [MIT License](./LICENSE) 开源协议，Copyright (c) 2025 FunHarness Contributors。
+
+---
+
 ## 致谢
 
 本书与 FunHarness 项目在设计上参考了以下优秀开源项目，特此致谢：
@@ -439,6 +536,7 @@ uv run fh feishu
 - [learn-claude-code](https://github.com/anthropics/learn-claude-code) — Claude Code 学习资源，启发了本书的工具系统设计
 - [OpenHarness](https://github.com/openharness/openharness) — FunHarness 的命名与架构灵感来源
 - [hermes agent](https://github.com/hermes-agent/hermes) — 多 Agent 协作模式的参考实现
+- [Pi coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) —  agent 工程实现的重要参考来源
 
 ---
 
