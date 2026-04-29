@@ -8,7 +8,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/) [![uv](https://img.shields.io/badge/uv-package%20manager-7C3AED?style=for-the-badge&logo=astral&logoColor=white)](https://github.com/astral-sh/uv) [![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI%20Compatible-10a37f?style=for-the-badge&logo=openai&logoColor=white)](https://openai.com) [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE) [![GitHub stars](https://img.shields.io/github/stars/hyyhf/agent-book-code?style=for-the-badge&logo=github&logoColor=white&v=1)](https://github.com/hyyhf/agent-book-code)
 
-*从第一个 LLM API 调用开始，一层一层搭出真正能工作的 AI 编程智能体*
+*从第一个 LLM API 调用开始，一层一层搭出真正能工作的 AI 智能体*
 
 </div>
 
@@ -21,9 +21,10 @@
 ## 封面
 
 <div align="center">
-  <img src="assets/ebook_cover.png" alt="Book Cover" width="500" />
+  <img src="assets/ebook_cover.png" alt="Book Cover" width="600" />
 </div>
 
+> [!note] 注
 > 真正理解 Agent 的方式，不是只使用 Agent，而是亲手把它构建出来。
 
 
@@ -49,7 +50,9 @@
 
 这也是本书与普通示例代码最大的区别：读者不是“看完一个项目”，而是跟着项目的演进过程，亲手把一个类 **“Claw” AI Agent** 搭出来。每一章都有对应的中间版本，每一次新增能力都能被运行、对比和修改。到最后，FunHarness 不只是代码仓库里的产物，而是读者理解 Agent 工程化之后的第一个实战作品。
 
-> 本书的核心信念：**理解 > 使用**。真正掌握 Agent 原理的最佳方式，是亲手把每一层抽象从零实现一遍。
+> [!check] 
+> 本书的核心信念：**理解 > 使用**。
+> 真正掌握 Agent 原理的最佳方式，是亲手把每一层抽象从零实现一遍。
 
 <div align="center">
 
@@ -116,9 +119,8 @@ cp .env.example .env
 
 ```bash
 OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL_NAME=deepseek-v4-flash
-# 可选：使用自定义 API base（兼容 OpenAI 格式的任意服务商）
-# OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_MODEL_NAME=deepseek-v4-flash # 可选：使用自定义 API base（兼容 OpenAI 格式的任意服务商）
+OPENAI_BASE_URL=https://api.deepseek.com/v1
 ```
 
 运行任意章节示例：
@@ -153,7 +155,7 @@ uv run chapter09/multi_agent.py
 
 </div>
 
-FunHarness 是本书的**核心实战项目**，也是贯穿全书的主线。它是一个用于教学、试验和二次改造的 **minimal AI Agent mini 产品**：足够小，小到读者可以读完关键代码；足够完整，完整到它真的能在本地运行、调用工具、管理上下文、保存记忆、追踪任务，并通过 TUI 或机器人通道与用户交互。
+FunHarness 是本书的**核心实战项目**，也是贯穿全书的主线。它是一个用于教学、试验和二次改造的 **minimal AI Agent 产品**：足够小，小到读者可以读完关键代码；足够完整，完整到它真的能在本地运行、调用工具、管理上下文、保存记忆、追踪任务，并通过 TUI 或机器人通道与用户交互。
 
 它对标的是 Claude Code、OpenHarness 这一类 AI 编程助手的核心思想，但不是把复杂系统直接搬给读者。FunHarness 把一个 AI Agent 产品拆成可学习的工程组件：Agent Loop 负责推理与推进，ToolRegistry 负责能力边界，Context 管理负责长对话，Permission 负责安全约束，Hooks/Middleware 负责扩展，可观测性负责调试和复盘。读者能清楚看到一个“会做事”的 Agent 是怎样从几十行代码长出来的。
 
@@ -308,7 +310,7 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 | 工具调用过程 | 任务执行状态 |
 |:---:|:---:|
-| <img src="assets/funharness_runtime_page_1.png" width="420" /> | <img src="assets/funharness_runtime_page_2.png" width="420" /> |
+| <img src="assets/funharness_runtime_page_1.png" width="450" /> | <img src="assets/funharness_runtime_page_2.png" width="450" /> |
 
 </div>
 
@@ -348,7 +350,7 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 ## 飞书机器人通道
 
-[![Feishu](https://img.shields.io/badge/飞书-长连接模式-00B4AB?style=for-the-badge&logo=lark&logoColor=white)](./docs/feishu_channel.zh.md) [![No Public IP](https://img.shields.io/badge/无需公网地址-内网穿透-brightgreen?style=for-the-badge)](#) [![Permission](https://img.shields.io/badge/权限模式-suggest%20推荐-orange?style=for-the-badge)](#)
+[![Feishu](https://img.shields.io/badge/飞书-长连接模式-00B4AB?style=for-the-badge&logo=lark&logoColor=white)](./docs/feishu_channel.zh.md)  [![Permission](https://img.shields.io/badge/权限模式-suggest%20推荐%20%7Cauto%20%7Capprove-orange?style=for-the-badge)](#)
 
 FunHarness 也支持以**飞书机器人**作为输入通道：用户在飞书里给机器人发消息，本地 FunHarness 负责运行 Agent、调用工具，并把结果回发到飞书。
 
