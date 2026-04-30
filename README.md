@@ -24,7 +24,7 @@
   <img src="assets/ebook_cover.png" alt="Book Cover" width="700" />
 </div>
 
-> [!quote]
+> [!important]
 > 真正理解 Agent 的方式，不是只使用 Agent，而是亲手把它构建出来。
 
 
@@ -50,7 +50,7 @@
 
 这也是本书与普通示例代码最大的区别：读者不是“看完一个项目”，而是跟着项目的演进过程，亲手把一个类 **“Claw” AI Agent** 搭出来。每一章都有对应的中间版本，每一次新增能力都能被运行、对比和修改。到最后，FunHarness 不只是代码仓库里的产物，而是读者理解 Agent 工程化之后的第一个实战作品。
 
-> [!abstract]
+> [!tip]
 > 本书的核心信念：**理解 > 使用**。
 > 真正掌握 Agent 原理的最佳方式，是亲手把每一层抽象从零实现一遍。
 
@@ -208,7 +208,8 @@ funharness/   完整生产版本（TUI + 飞书通道）
 
 ### 功能更新
 
-> [!note] News
+> [!NOTE] 
+> ### News
 > - **2026-04-29 —— 补充Agent Teams：**
 >   - 本次更新补齐了 `FunHarness` 的 **Agent Teams / SubAgent、持久任务系统、后台运行时与定时调度** 能力，让它从单一对话助手升级为可以分工、排期、后台执行的 mini Agent 工作台。
 
@@ -517,7 +518,7 @@ uv run fh feishu
 | `textual[syntax]` | >=8.2.4 | TUI 界面框架 |
 | `lark-oapi` | >=1.4.23 | 飞书机器人 SDK |
 | `python-dotenv` | >=1.2.2 | `.env` 配置加载 |
-| `openai-agents` | >=0.14.3 | Chapter 12 OpenAI Agents SDK 示例 |
+
 
 所有依赖通过 `uv sync` 自动安装，无需手动 pip install。
 
@@ -533,9 +534,9 @@ uv run fh feishu
 
 本书与 FunHarness 项目在设计上参考了以下优秀开源项目，特此致谢：
 
-- [learn-claude-code](https://github.com/anthropics/learn-claude-code) — Claude Code 学习资源，启发了本书的工具系统设计
-- [OpenHarness](https://github.com/openharness/openharness) — FunHarness 的命名与架构灵感来源
-- [hermes agent](https://github.com/hermes-agent/hermes) — 多 Agent 协作模式的参考实现
+- [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) — Claude Code 学习资源，启发了本书的工具系统设计
+- [OpenHarness](https://github.com/HKUDS/OpenHarness) — FunHarness 的命名与架构灵感来源
+- [hermes agent](https://github.com/nousresearch/hermes-agent) — 多 Agent 协作模式的参考实现
 - [Pi coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) —  agent 工程实现的重要参考来源
 
 ---
