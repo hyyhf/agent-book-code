@@ -21,10 +21,9 @@
 ## 封面
 
 <div align="center">
-  <img src="assets/ebook_cover.png" alt="Book Cover" width="700" />
+  <img src="assets/ebook_cover.png" alt="Book Cover" width="680" />
 </div>
 
-> [!important]
 > 真正理解 Agent 的方式，不是只使用 Agent，而是亲手把它构建出来。
 
 
@@ -103,6 +102,22 @@
 > **说明**：每章中加粗的 `funharness_vXX.py` 是该章对应版本的 FunHarness 完整实现，可独立运行。最终的完整版本即本仓库的 [`funharness/`](./funharness/) 目录。
 
 ### 环境准备
+
+1. **安装包管理器 uv**
+
+本项目使用 [uv](https://github.com/astral-sh/uv) 作为包和环境管理器。如果你尚未安装，可以使用以下命令：
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+> 更多安装方式请参考 [uv 官方安装文档](https://docs.astral.sh/uv/getting-started/installation/)。
+
+2. **克隆仓库与安装依赖**
 
 ```bash
 # 克隆仓库
@@ -209,7 +224,6 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
-> ### News
 > - **2026-04-29 —— 补充Agent Teams：**
 >   - 本次更新补齐了 `FunHarness` 的 **Agent Teams / SubAgent、持久任务系统、后台运行时与定时调度** 能力，让它从单一对话助手升级为可以分工、排期、后台执行的 mini Agent 工作台。
 
