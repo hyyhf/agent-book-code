@@ -6,7 +6,7 @@
 
 **一本带你亲手打造类 “Claw” AI Agent 的实战书**
 
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/) [![uv](https://img.shields.io/badge/uv-package%20manager-7C3AED?style=for-the-badge&logo=astral&logoColor=white)](https://github.com/astral-sh/uv) [![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI%20Compatible-10a37f?style=for-the-badge&logo=openai&logoColor=white)](https://openai.com) [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE) [![GitHub stars](https://img.shields.io/github/stars/hyyhf/agent-book-code?style=for-the-badge&logo=github&logoColor=white&v=1)](https://github.com/hyyhf/agent-book-code)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/) [![uv](https://img.shields.io/badge/uv-package%20manager-7C3AED?style=for-the-badge&logo=astral&logoColor=white)](https://github.com/astral-sh/uv) [![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI%20Compatible-10a37f?style=for-the-badge&logo=openai&logoColor=white)](https://openai.com) [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE) [![GitHub stars](https://img.shields.io/github/stars/hyyhf/agent-book-code?style=for-the-badge&color=DDB88B&logo=github&logoColor=white&v=1)](https://github.com/hyyhf/agent-book-code)
 
 *从第一个 LLM API 调用开始，一层一层搭出真正能工作的 AI 智能体*
 
@@ -69,14 +69,14 @@
 
 ### 本书特色
 
-| 特色 | 说明 |
-|------|------|
-| **从零构建** | 每一章都从最基础的概念出发，不跳步骤 |
-| **迭代演进** | FunHarness 从 `v01` 到 `v08` 逐版本进化，读者可以看到每个特性如何被加入、为什么要加入 |
-| **可运行代码** | 每章均有独立可运行的示例，以及对应版本的 FunHarness |
-| **mini 产品实战** | 最终产物 FunHarness 是一个真实可用、配置简单、便于教学和试验的 AI 编程助手 |
-| **读者可复刻** | 所有读者都可以在本仓库基础上继续改造，打造属于自己的类 “Claw” AI Agent |
-| **原理优先** | 在引入第三方库之前，先手写核心机制，确保读者真正理解底层 |
+| 特色              | 说明                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| **从零构建**      | 每一章都从最基础的概念出发，不跳步骤                                                  |
+| **迭代演进**      | FunHarness 从 `v01` 到 `v08` 逐版本进化，读者可以看到每个特性如何被加入、为什么要加入 |
+| **可运行代码**    | 每章均有独立可运行的示例，以及对应版本的 FunHarness                                   |
+| **mini 产品实战** | 最终产物 FunHarness 是一个真实可用、配置简单、便于教学和试验的 AI 编程助手            |
+| **读者可复刻**    | 所有读者都可以在本仓库基础上继续改造，打造属于自己的类 “Claw” AI Agent                |
+| **原理优先**      | 在引入第三方库之前，先手写核心机制，确保读者真正理解底层                              |
 
 <div align="center"><img src="assets/chinese-divider-transparent-cropped.png" width="80%" /></div>
 
@@ -84,19 +84,19 @@
 
 本仓库共 **11 章**代码，每章包含若干独立示例脚本和对应版本的 FunHarness 主体。
 
-| 章节 | 主题 | 关键脚本 | 运行方式 |
-|------|------|----------|----------|
-| **Chapter 01** | LLM 基础：API 调用与流式输出 | `first_chat.py` `streaming_demo.py` `function_calling.py` `multi_turn_chat.py` `sampling_params.py` | `uv run chapter01/first_chat.py` |
-| **Chapter 02** | Agent Loop：从无到有的智能体循环 | `minimal_agent_loop.py` `streaming_agent.py` `message_lifecycle.py` `error_retry.py` **`funharness_v01.py`** | `uv run chapter02/minimal_agent_loop.py` |
-| **Chapter 03** | Harness 框架：裸 Agent vs. 有框架 Agent | `bare_vs_harnessed.py` `harness_anatomy.py` `prompt_context_harness.py` | `uv run chapter03/bare_vs_harnessed.py` |
-| **Chapter 04** | 工具系统：注册、调用到生命周期 | `tool_registry.py` `tool_lifecycle.py` `tool_design_principles.py` `core_tools.py` **`funharness_v02.py`** | `uv run chapter04/tool_registry.py` |
-| **Chapter 05** | 上下文管理：发现、压缩与系统提示 | `context_discovery.py` `context_compaction.py` `system_prompt_builder.py` **`funharness_v03.py`** | `uv run chapter05/context_discovery.py` |
-| **Chapter 06** | 记忆、技能与会话：跨轮次的状态持久化 | `persistent_memory.py` `skill_loader.py` `session_manager.py` **`funharness_v04.py`** | `uv run chapter06/persistent_memory.py` |
-| **Chapter 07** | 权限系统：auto / suggest / approve 三模式 | `permission_manager.py` `approval_flow.py` **`funharness_v05.py`** | `uv run chapter07/permission_manager.py` |
-| **Chapter 08** | Hooks、Middleware 与插件架构 | `hooks.py` `middleware.py` `plugin_system.py` **`funharness_v06.py`** | `uv run chapter08/hooks.py` |
-| **Chapter 09** | 多任务与多智能体协作 | `task_manager.py` `multi_agent.py` `build_verify_fix.py` **`funharness_v07.py`** | `uv run chapter09/task_manager.py` |
-| **Chapter 10** | 可观测性与评估：追踪、日志与成本看板 | `observability.py` `evaluation.py` **`funharness_v08.py`** | `uv run chapter10/observability.py` |
-| **Chapter 12** | OpenAI Agents SDK：框架对比与实战 | `01_basic_agent.py` `02_handoff.py` `03_guardrails.py` `04_tracing.py` `05_study_group.py` | `uv run chapter12/01_basic_agent.py` |
+| 章节           | 主题                                      | 关键脚本                                                                                                     | 运行方式                                 |
+| -------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| **Chapter 01** | LLM 基础：API 调用与流式输出              | `first_chat.py` `streaming_demo.py` `function_calling.py` `multi_turn_chat.py` `sampling_params.py`          | `uv run chapter01/first_chat.py`         |
+| **Chapter 02** | Agent Loop：从无到有的智能体循环          | `minimal_agent_loop.py` `streaming_agent.py` `message_lifecycle.py` `error_retry.py` **`funharness_v01.py`** | `uv run chapter02/minimal_agent_loop.py` |
+| **Chapter 03** | Harness 框架：裸 Agent vs. 有框架 Agent   | `bare_vs_harnessed.py` `harness_anatomy.py` `prompt_context_harness.py`                                      | `uv run chapter03/bare_vs_harnessed.py`  |
+| **Chapter 04** | 工具系统：注册、调用到生命周期            | `tool_registry.py` `tool_lifecycle.py` `tool_design_principles.py` `core_tools.py` **`funharness_v02.py`**   | `uv run chapter04/tool_registry.py`      |
+| **Chapter 05** | 上下文管理：发现、压缩与系统提示          | `context_discovery.py` `context_compaction.py` `system_prompt_builder.py` **`funharness_v03.py`**            | `uv run chapter05/context_discovery.py`  |
+| **Chapter 06** | 记忆、技能与会话：跨轮次的状态持久化      | `persistent_memory.py` `skill_loader.py` `session_manager.py` **`funharness_v04.py`**                        | `uv run chapter06/persistent_memory.py`  |
+| **Chapter 07** | 权限系统：auto / suggest / approve 三模式 | `permission_manager.py` `approval_flow.py` **`funharness_v05.py`**                                           | `uv run chapter07/permission_manager.py` |
+| **Chapter 08** | Hooks、Middleware 与插件架构              | `hooks.py` `middleware.py` `plugin_system.py` **`funharness_v06.py`**                                        | `uv run chapter08/hooks.py`              |
+| **Chapter 09** | 多任务与多智能体协作                      | `task_manager.py` `multi_agent.py` `build_verify_fix.py` **`funharness_v07.py`**                             | `uv run chapter09/task_manager.py`       |
+| **Chapter 10** | 可观测性与评估：追踪、日志与成本看板      | `observability.py` `evaluation.py` **`funharness_v08.py`**                                                   | `uv run chapter10/observability.py`      |
+| **Chapter 12** | OpenAI Agents SDK：框架对比与实战         | `01_basic_agent.py` `02_handoff.py` `03_guardrails.py` `04_tracing.py` `05_study_group.py`                   | `uv run chapter12/01_basic_agent.py`     |
 
 > [!tip]
 > **说明**：每章中加粗的 `funharness_vXX.py` 是该章对应版本的 FunHarness 完整实现，可独立运行。最终的完整版本即本仓库的 [`funharness/`](./funharness/) 目录。
@@ -186,16 +186,16 @@ FunHarness 是本书的**核心实战项目**，也是贯穿全书的主线。�
 
 ### 为什么说它适合教学和试验
 
-| 特点 | 说明 |
-|------|------|
-| **教学优先** | 每个模块都尽量直接、清晰、可读，适合学习 agent 基础设施 |
-| **配置简单** | 只需要 Python、uv 和一个兼容 OpenAI 格式的模型配置，本地即可启动，不需要复杂服务编排 |
-| **结构克制** | 不引入庞大的 Agent 框架，核心模块边界清楚，适合逐文件阅读 |
-| **版本可对照** | `funharness_v01` 到 `funharness_v08` 展示了从最小 Loop 到完整产品的演进路径,每个版本都对应书中一个阶段，方便对比学习 |
-| **能力可拆装** | 工具、记忆、技能、权限、Hooks、任务、可观测性都可以单独理解和替换 |
-| **真实可运行** | 不是伪代码或玩具 demo，而是一个能处理本地文件、命令、任务和会话的 mini 产品 |
-| **类 Claw 体验** | 支持本地工具执行、文件修改、命令运行、外部聊天入口 |
-| **适合再创造** | 读者可以保留核心框架，替换工具、提示词、权限策略和交互界面，做出自己的 Agent |
+| 特点             | 说明                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **教学优先**     | 每个模块都尽量直接、清晰、可读，适合学习 agent 基础设施                                                              |
+| **配置简单**     | 只需要 Python、uv 和一个兼容 OpenAI 格式的模型配置，本地即可启动，不需要复杂服务编排                                 |
+| **结构克制**     | 不引入庞大的 Agent 框架，核心模块边界清楚，适合逐文件阅读                                                            |
+| **版本可对照**   | `funharness_v01` 到 `funharness_v08` 展示了从最小 Loop 到完整产品的演进路径,每个版本都对应书中一个阶段，方便对比学习 |
+| **能力可拆装**   | 工具、记忆、技能、权限、Hooks、任务、可观测性都可以单独理解和替换                                                    |
+| **真实可运行**   | 不是伪代码或玩具 demo，而是一个能处理本地文件、命令、任务和会话的 mini 产品                                          |
+| **类 Claw 体验** | 支持本地工具执行、文件修改、命令运行、外部聊天入口                                                                   |
+| **适合再创造**   | 读者可以保留核心框架，替换工具、提示词、权限策略和交互界面，做出自己的 Agent                                         |
 
 ### 与本书的关系
 
@@ -227,15 +227,15 @@ funharness/   完整生产版本（TUI + 飞书通道）
 > - **2026-04-29 —— 补充Agent Teams：**
 >   - 本次更新补齐了 `FunHarness` 的 **Agent Teams / SubAgent、持久任务系统、后台运行时与定时调度** 能力，让它从单一对话助手升级为可以分工、排期、后台执行的 mini Agent 工作台。
 
-| 更新方向 | 新增能力 | 常用入口 |
-|----------|----------|----------|
-| **Agent Teams** | 创建长期队友、维护队友名册、写入 inbox、异步委派任务，适合把审查、实现、验证拆给不同角色处理 | `/team`、`/team create`、`/delegate`、`tool_team_*` |
-| **SubAgent** | 一次性隔离运行子 Agent，适合独立分析、交叉检查、生成候选方案，不污染主会话上下文 | `tool_subagent_run` |
-| **持久任务图** | 任务支持 `owner`、依赖关系、ready 判断、状态流转、备注与进度落盘，完成任务后自动解锁后续任务 | `/plan`、`/task`、`/tasks`、`/next`、`/done` |
-| **后台运行时** | 慢命令可以进入后台槽位运行，完整输出保存到 `.funharness/runtime/`，完成后通过事件回到主循环 | `/bg run`、`/bg output`、`tool_runtime_*` |
-| **定时调度** | 支持未来时间、`in 10m` 和简化 cron，将 prompt 安排到指定时间触发 | `/schedule create`、`/schedule`、`tool_schedule_*` |
-| **TUI 状态展示** | 底部状态栏同步展示 Team、后台任务、调度数量；并修复并行同名工具调用的预览串线问题 | TUI 状态栏、工具流式预览 |
-| **安全与稳定性** | 修复工作区路径逃逸、POSIX 进程组超时清理、跨会话任务状态串扰、JSON 预览失效等问题 | 权限系统、Sandbox、TUI |
+| 更新方向         | 新增能力                                                                                     | 常用入口                                            |
+| ---------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Agent Teams**  | 创建长期队友、维护队友名册、写入 inbox、异步委派任务，适合把审查、实现、验证拆给不同角色处理 | `/team`、`/team create`、`/delegate`、`tool_team_*` |
+| **SubAgent**     | 一次性隔离运行子 Agent，适合独立分析、交叉检查、生成候选方案，不污染主会话上下文             | `tool_subagent_run`                                 |
+| **持久任务图**   | 任务支持 `owner`、依赖关系、ready 判断、状态流转、备注与进度落盘，完成任务后自动解锁后续任务 | `/plan`、`/task`、`/tasks`、`/next`、`/done`        |
+| **后台运行时**   | 慢命令可以进入后台槽位运行，完整输出保存到 `.funharness/runtime/`，完成后通过事件回到主循环  | `/bg run`、`/bg output`、`tool_runtime_*`           |
+| **定时调度**     | 支持未来时间、`in 10m` 和简化 cron，将 prompt 安排到指定时间触发                             | `/schedule create`、`/schedule`、`tool_schedule_*`  |
+| **TUI 状态展示** | 底部状态栏同步展示 Team、后台任务、调度数量；并修复并行同名工具调用的预览串线问题            | TUI 状态栏、工具流式预览                            |
+| **安全与稳定性** | 修复工作区路径逃逸、POSIX 进程组超时清理、跨会话任务状态串扰、JSON 预览失效等问题            | 权限系统、Sandbox、TUI                              |
 
 新增功能保持 mini 项目的实现风格：核心状态都落在 `.funharness/` 下，命令行、TUI 与工具调用共享同一套能力，方便学习、调试和继续裁剪扩展。
 
@@ -243,25 +243,25 @@ funharness/   完整生产版本（TUI + 飞书通道）
 
 ### 核心功能
 
-| 功能模块 | 说明 |
-|----------|------|
-| **Agent Loop** | 流式响应、工具调用、迭代循环、中断支持，最多 100 轮自动推进 |
-| **工具系统** | 装饰器注册，自动从 docstring 生成 OpenAI Function Calling schema |
-| **内置工具 (30+)** | 文件读/写/替换、Shell 命令、目录列表、正则搜索、网页抓取、网页搜索、记忆读写、任务管理、后台运行、定时调度、多 Agent 协作 |
-| **上下文管理** | Token 估算、自动 compact、工具结果截断，防止 context 爆炸 |
-| **持久记忆** | `.funharness/MEMORY.md` 跨会话记忆，支持关键词搜索与追加 |
-| **技能系统** | `skills/<name>/SKILL.md` 自动发现，注入系统提示，`/skills` 查看 |
-| **会话管理** | 自动保存/恢复对话，`.funharness/sessions/` 存储历史 |
-| **权限系统** | `auto` / `suggest` / `approve` 三档，读写操作分类，`Shift+Tab` 实时切换 |
-| **审批流** | `approve` 模式下弹出审批 UI，Allow / Deny 交互按钮 |
-| **持久任务图** | `/plan <需求>` 生成任务图，支持依赖、owner、ready 判断、完成后自动解锁后续任务，并写入 `PROGRESS.md` |
-| **后台运行时** | `tool_runtime_run` / `/bg run` 将慢命令放入后台执行槽位，完整输出落盘，摘要通过事件队列回到主循环 |
-| **定时调度** | `tool_schedule_create` / `/schedule create` 记录未来触发的 prompt，支持 `in 10m`、ISO 时间和简化 cron |
-| **SubAgent / Agent Team** | `tool_subagent_run` 适合一次性隔离分析；`tool_team_create` / `/delegate` 支持长期队友、inbox 和异步委派 |
-| **Hooks / Middleware** | Pre/Post Tool 钩子、中间件链，无侵入地扩展 agent 行为 |
-| **可观测性** | 结构化日志、Span 追踪、成本看板、失败模式分析、一键导出 |
-| **TUI 界面** | 基于 Textual 的终端 UI，流式渲染、Markdown 展示、工具块边框 |
-| **飞书机器人** | 长连接模式，无需公网地址，私聊/群聊均可触发 |
+| 功能模块                  | 说明                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Agent Loop**            | 流式响应、工具调用、迭代循环、中断支持，最多 100 轮自动推进                                                               |
+| **工具系统**              | 装饰器注册，自动从 docstring 生成 OpenAI Function Calling schema                                                          |
+| **内置工具 (30+)**        | 文件读/写/替换、Shell 命令、目录列表、正则搜索、网页抓取、网页搜索、记忆读写、任务管理、后台运行、定时调度、多 Agent 协作 |
+| **上下文管理**            | Token 估算、自动 compact、工具结果截断，防止 context 爆炸                                                                 |
+| **持久记忆**              | `.funharness/MEMORY.md` 跨会话记忆，支持关键词搜索与追加                                                                  |
+| **技能系统**              | `skills/<name>/SKILL.md` 自动发现，注入系统提示，`/skills` 查看                                                           |
+| **会话管理**              | 自动保存/恢复对话，`.funharness/sessions/` 存储历史                                                                       |
+| **权限系统**              | `auto` / `suggest` / `approve` 三档，读写操作分类，`Shift+Tab` 实时切换                                                   |
+| **审批流**                | `approve` 模式下弹出审批 UI，Allow / Deny 交互按钮                                                                        |
+| **持久任务图**            | `/plan <需求>` 生成任务图，支持依赖、owner、ready 判断、完成后自动解锁后续任务，并写入 `PROGRESS.md`                      |
+| **后台运行时**            | `tool_runtime_run` / `/bg run` 将慢命令放入后台执行槽位，完整输出落盘，摘要通过事件队列回到主循环                         |
+| **定时调度**              | `tool_schedule_create` / `/schedule create` 记录未来触发的 prompt，支持 `in 10m`、ISO 时间和简化 cron                     |
+| **SubAgent / Agent Team** | `tool_subagent_run` 适合一次性隔离分析；`tool_team_create` / `/delegate` 支持长期队友、inbox 和异步委派                   |
+| **Hooks / Middleware**    | Pre/Post Tool 钩子、中间件链，无侵入地扩展 agent 行为                                                                     |
+| **可观测性**              | 结构化日志、Span 追踪、成本看板、失败模式分析、一键导出                                                                   |
+| **TUI 界面**              | 基于 Textual 的终端 UI，流式渲染、Markdown 展示、工具块边框                                                               |
+| **飞书机器人**            | 长连接模式，无需公网地址，私聊/群聊均可触发                                                                               |
 
 
 ---
@@ -331,11 +331,11 @@ uv run fh
 
 #### 权限模式
 
-| 模式 | 读文件 / 搜索 | 写文件 / Shell | 适用场景 |
-|------|:---:|:---:|----------|
-| `auto` | 自动执行 | 自动执行 | 完全信任的本地工作区 |
-| `suggest` *(默认)* | 自动执行 | **需审批** | 日常开发推荐 |
-| `approve` | **需审批** | **需审批** | 敏感或共享环境 |
+| 模式               | 读文件 / 搜索 | 写文件 / Shell | 适用场景             |
+| ------------------ | :-----------: | :------------: | -------------------- |
+| `auto`             |   自动执行    |    自动执行    | 完全信任的本地工作区 |
+| `suggest` *(默认)* |   自动执行    |   **需审批**   | 日常开发推荐         |
+| `approve`          |  **需审批**   |   **需审批**   | 敏感或共享环境       |
 
 TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在输入框下方。
 
@@ -355,8 +355,8 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 <div align="center">
 
-| 工具调用过程 | 任务执行状态 |
-|:---:|:---:|
+|                          工具调用过程                          |                          任务执行状态                          |
+| :------------------------------------------------------------: | :------------------------------------------------------------: |
 | <img src="assets/funharness_runtime_page_1.png" width="450" /> | <img src="assets/funharness_runtime_page_2.png" width="450" /> |
 
 </div>
@@ -367,45 +367,46 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 在 TUI 输入框中输入以下命令可控制 agent 行为：
 
-| 命令 | 说明 |
-|------|------|
-| `/help` | 显示所有可用命令 |
-| `/new` | 开始新会话（自动保存当前会话） |
-| `/cost` | 显示当前 Token 用量与估算费用 |
-| `/context` | 显示上下文窗口状态（tokens / 消息数） |
-| `/save` | 手动保存当前会话 |
-| `/memory` | 查看持久记忆内容 |
-| `/mode [auto\|suggest\|approve]` | 查看或切换权限模式 |
-| `/perms` | 查看路径权限配置 |
-| `/skills` | 列出已发现的 Skills 及摘要 |
-| `/hooks` | 列出已注册的 Hooks |
-| `/middleware` | 列出中间件链 |
-| `/plan <需求描述>` | 生成 JSON 任务列表并保存 |
-| `/task create <标题>` | 手动创建一条持久任务 |
-| `/task get <T1>` | 查看单条任务的完整 JSON 状态 |
-| `/task update <T1> status=<状态> owner=<成员> notes=<备注>` | 更新任务状态、负责人或备注 |
-| `/tasks` | 查看当前任务列表与完成进度 |
-| `/next` | 获取下一个待执行任务详情 |
-| `/done <T1> [files]` | 标记任务完成并记录产出文件 |
-| `/progress` | 查看进度追踪文件 |
-| `/team` | 查看当前 Agent Team 名册 |
-| `/team create <name> <role> [instructions]` | 创建或更新一个长期队友 |
-| `/team inbox <name>` | 查看队友 inbox |
-| `/delegate <name> <任务描述>` | 将工作异步委派给某个队友 |
-| `/bg` | 查看后台 runtime task 状态 |
-| `/bg run <command>` | 在后台运行慢命令，主循环可继续工作 |
-| `/bg output <runtime_id>` | 查看后台任务完整输出 |
-| `/schedule` | 查看定时调度列表 |
-| `/schedule create <name> <when> <prompt>` | 创建定时 prompt，例如 `in 10m` 或 `*/5 * * * *` |
-| `/schedule delete <job_id>` | 删除调度记录 |
-| `/events` | 手动拉取 runtime / schedule 事件 |
-| `/trace` | 显示 Span 追踪时间线与汇总 |
-| `/logs` | 显示最近 15 条结构化日志 |
-| `/dashboard` | 显示成本与 Token 看板 |
-| `/failures` | 分析失败模式（循环/错误/重复调用） |
-| `/export` | 导出追踪、日志和成本数据到 `.funharness/traces/` |
-| `clear` | 清空对话（保存当前会话后重置） |
-| `quit` | 退出 FunHarness |
+| 命令                                                        | 说明                                             |
+| ----------------------------------------------------------- | ------------------------------------------------ |
+| `/help`                                                     | 显示所有可用命令                                 |
+| `/new`                                                      | 开始新会话（自动保存当前会话）                   |
+| `/cost`                                                     | 显示当前 Token 用量与估算费用                    |
+| `/context`                                                  | 显示上下文窗口状态（tokens / 消息数）            |
+| `/save`                                                     | 手动保存当前会话                                 |
+| `/memory`                                                   | 查看持久记忆内容                                 |
+| `/mode [auto\|suggest\|approve]`                            | 查看或切换权限模式                               |
+| `/perms`                                                    | 查看路径权限配置                                 |
+| `/skills`                                                   | 列出已发现的 Skills 及摘要                       |
+| `/hooks`                                                    | 列出已注册的 Hooks                               |
+| `/middleware`                                               | 列出中间件链                                     |
+| `/plan <需求描述>`                                          | 生成 JSON 任务列表并保存                         |
+| `/task create <标题>`                                       | 手动创建一条持久任务                             |
+| `/task get <T1>`                                            | 查看单条任务的完整 JSON 状态                     |
+| `/task update <T1> status=<状态> owner=<成员> notes=<备注>` | 更新任务状态、负责人或备注                       |
+| `/tasks`                                                    | 查看当前任务列表与完成进度                       |
+| `/next`                                                     | 获取下一个待执行任务详情                         |
+| `/done <T1> [files]`                                        | 标记任务完成并记录产出文件                       |
+| `/progress`                                                 | 查看进度追踪文件                                 |
+| `/team`                                                     | 查看当前 Agent Team 名册                         |
+| `/team create <name> <role> [instructions]`                 | 创建或更新一个长期队友                           |
+| `/team inbox <name>`                                        | 查看队友 inbox                                   |
+| `/delegate <name> <任务描述>`                               | 将工作异步委派给某个队友                         |
+| `/bg`                                                       | 查看后台 runtime task 状态                       |
+| `/bg run <command>`                                         | 在后台运行慢命令，主循环可继续工作               |
+| `/bg output <runtime_id>`                                   | 查看后台任务完整输出                             |
+| `/schedule`                                                 | 查看定时调度列表                                 |
+| `/schedule create <name> <when> <prompt>`                   | 创建定时 prompt，例如 `in 10m` 或 `*/5 * * * *`  |
+| `/schedule delete <job_id>`                                 | 删除调度记录                                     |
+| `/events`                                                   | 手动拉取 runtime / schedule 事件                 |
+| `/trace`                                                    | 显示 Span 追踪时间线与汇总                       |
+| `/logs`                                                     | 显示最近 15 条结构化日志                         |
+| `/dashboard`                                                | 显示成本与 Token 看板                            |
+| `/failures`                                                 | 分析失败模式（循环/错误/重复调用）               |
+| `/export`                                                   | 导出追踪、日志和成本数据到 `.funharness/traces/` |
+| `clear` or `Ctrl+L`                                         | 清空对话（保存当前会话后重置）                   |
+| `Ctrl+Z`                                                    | 中断当前会话                                     |
+| `quit` or `Ctrl+C`                                          | 退出 FunHarness                                  |
 
 #### 示例：用 Agent Team 完成一个小练习
 
@@ -487,14 +488,14 @@ FEISHU_EVENT_MODE=ws                # 长连接模式（不需要公网）
 FEISHU_PERMISSION_MODE=suggest      # 推荐先用 suggest 模式
 ```
 
-| 配置项 | 是否必填 | 说明 |
-|--------|:--------:|------|
-| `FEISHU_APP_ID` | 必填 | 飞书应用的 App ID，通常以 `cli_` 开头 |
-| `FEISHU_APP_SECRET` | 必填 | 飞书应用的 App Secret |
-| `FEISHU_EVENT_MODE` | 推荐 | `ws` 表示长连接，不需要公网地址 |
-| `FEISHU_PERMISSION_MODE` | 推荐 | 建议先用 `suggest`，更安全 |
-| `OPENAI_API_KEY` | 必填 | FunHarness 调用模型需要 |
-| `OPENAI_MODEL_NAME` | 推荐 | 例如 `deepseek-v4-flash` 或 `deepseek-v4-pro` |
+| 配置项                   | 是否必填 | 说明                                          |
+| ------------------------ | :------: | --------------------------------------------- |
+| `FEISHU_APP_ID`          |   必填   | 飞书应用的 App ID，通常以 `cli_` 开头         |
+| `FEISHU_APP_SECRET`      |   必填   | 飞书应用的 App Secret                         |
+| `FEISHU_EVENT_MODE`      |   推荐   | `ws` 表示长连接，不需要公网地址               |
+| `FEISHU_PERMISSION_MODE` |   推荐   | 建议先用 `suggest`，更安全                    |
+| `OPENAI_API_KEY`         |   必填   | FunHarness 调用模型需要                       |
+| `OPENAI_MODEL_NAME`      |   推荐   | 例如 `deepseek-v4-flash` 或 `deepseek-v4-pro` |
 
 ```bash
 # 3. 启动通道
@@ -514,8 +515,8 @@ uv run fh feishu
 
 <div align="center">
 
-| 消息触发与工具调用 | Agent 回复与结果 |
-|:---:|:---:|
+|                   消息触发与工具调用                   |                   Agent 回复与结果                    |
+| :----------------------------------------------------: | :---------------------------------------------------: |
 | <img src="assets/feishu_run_page_1.jpg" width="200" /> | <img src="assets/feishu_runpage_2.jpg" width="200" /> |
 
 </div>
@@ -526,12 +527,12 @@ uv run fh feishu
 
 ## 依赖说明
 
-| 依赖 | 版本 | 用途 |
-|------|------|------|
-| `openai` | >=2.32.0 | LLM API 调用（兼容任意 OpenAI 格式服务商） |
-| `textual[syntax]` | >=8.2.4 | TUI 界面框架 |
-| `lark-oapi` | >=1.4.23 | 飞书机器人 SDK |
-| `python-dotenv` | >=1.2.2 | `.env` 配置加载 |
+| 依赖              | 版本     | 用途                                       |
+| ----------------- | -------- | ------------------------------------------ |
+| `openai`          | >=2.32.0 | LLM API 调用（兼容任意 OpenAI 格式服务商） |
+| `textual[syntax]` | >=8.2.4  | TUI 界面框架                               |
+| `lark-oapi`       | >=1.4.23 | 飞书机器人 SDK                             |
+| `python-dotenv`   | >=1.2.2  | `.env` 配置加载                            |
 
 
 所有依赖通过 `uv sync` 自动安装，无需手动 pip install。
@@ -540,7 +541,7 @@ uv run fh feishu
 
 ## 许可证
 
-本项目采用 [MIT License](./LICENSE) 开源协议，Copyright (c) 2025 FunHarness Contributors。
+本项目采用 [MIT License](./LICENSE) 开源协议。
 
 ---
 

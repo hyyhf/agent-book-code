@@ -12,6 +12,13 @@ defaultspace/
 # Virtual environments
 .venv
 
+# Node / Electron GUI artifacts
+node_modules/
+funGUI/node_modules/
+funGUI/dist/
+funGUI/.vite/
+funGUI/*.tsbuildinfo
+funGUI/npm-debug.log*
+
 # Environment variables (secrets)
 .env
-

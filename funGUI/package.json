@@ -1,0 +1,34 @@
+{
+  "name": "funharness-gui",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@arco-design/web-react": "^2.66.3",
+    "@icon-park/react": "^1.4.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1",
+    "vite": "^7.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.2",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "concurrently": "^9.2.1",
+    "electron": "^38.2.1",
+    "typescript": "^5.9.3",
+    "wait-on": "^9.0.1"
+  }
+}
