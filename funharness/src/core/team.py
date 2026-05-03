@@ -40,10 +40,11 @@ class TeamMember:
 
 
 class SubAgent:
-    def __init__(self, role: str, instructions: str = "", model: str = MODEL):
+    def __init__(self, role: str, instructions: str = "", model: str = MODEL, llm_client=None):
         self.role = role
         self.instructions = instructions
         self.model = model
+        self.llm_client = llm_client or client
         self.messages = [{"role": "system", "content": self._system_prompt()}]
 
     def _system_prompt(self) -> str:
@@ -58,7 +59,7 @@ class SubAgent:
     def run(self, task: str, context: str = "") -> str:
         content = task if not context else f"Context:\n{context}\n\nTask:\n{task}"
         self.messages.append({"role": "user", "content": content})
-        response = client.chat.completions.create(
+        response = self.llm_client.chat.completions.create(
             model=self.model,
             messages=self.messages,
             temperature=0.3,
@@ -75,6 +76,7 @@ class TeamManager:
         root: str | Path = ".funharness/team",
         runtime: RuntimeTaskManager | None = None,
         model: str = MODEL,
+        llm_client=None,
     ):
         self.root = Path(root)
         self.inbox_dir = self.root / "inbox"
@@ -82,6 +84,7 @@ class TeamManager:
         self.config_path = self.root / "config.json"
         self.runtime = runtime
         self.model = model
+        self.llm_client = llm_client or client
         self.root.mkdir(parents=True, exist_ok=True)
         self.inbox_dir.mkdir(parents=True, exist_ok=True)
         self.history_dir.mkdir(parents=True, exist_ok=True)
@@ -186,7 +189,7 @@ class TeamManager:
             inbox_text = "\n".join(
                 f"[{item.get('from', '?')}] {item.get('content', '')}" for item in inbox
             )
-            subagent = SubAgent(member.role, member.instructions, model=self.model)
+            subagent = SubAgent(member.role, member.instructions, model=self.model, llm_client=self.llm_client)
             result = subagent.run(task, context=f"{context}\n\nInbox:\n{inbox_text}".strip())
             self._append_history(member.name, task, result)
             member.status = "idle"

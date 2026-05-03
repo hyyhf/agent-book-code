@@ -1,5 +1,5 @@
 import { Button, Empty, Popconfirm, Spin } from '@arco-design/web-react';
-import { Delete, Play, Time } from '@icon-park/react';
+import { Delete, Play, OpenDoor, Time } from '@icon-park/react';
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import type { SessionSummary } from '../../types';
@@ -84,8 +84,8 @@ export function HistoryManager({ onLoadSession }: { onLoadSession: (id: string) 
               </span>
             </div>
             <div className="manager-row-actions">
-              <Button size="small" type="primary" icon={<Play />} onClick={() => void handleLoad(session.id)}>
-                加载
+              <Button size="small" type="primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }} onClick={() => void handleLoad(session.id)}>
+                <OpenDoor /><span> 加载</span>
               </Button>
               <Popconfirm title="确定要删除这个会话吗？" onOk={() => void handleDelete(session.id)}>
                 <Button size="small" status="danger" icon={<Delete />} />

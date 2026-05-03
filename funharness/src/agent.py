@@ -4,17 +4,21 @@ FunHarness - Agent Engine
 Core agent loop as a class with callback-based integration for TUI.
 """
 import json
+import platform
+import shlex
 import threading
 import time
 from contextvars import ContextVar
 from pathlib import Path
 
 from .core.tools import registry
-from .core.llm import call_with_retry, process_stream_response, MODEL
+from .core.attachments import AttachmentManager, DEFAULT_ATTACHMENT_MAX_CHARS
+from .core.llm import call_with_retry, process_stream_response, MODEL, client
 from .core.system_prompt import build_system_prompt, build_environment_block, build_tools_guide
 from .core.context import (
     CostTracker, estimate_tokens, build_context_block,
     truncate_tool_results, compact_conversation, should_compact,
+    CONTEXT_SOFT_LIMIT,
 )
 from .core.memory import init_memory, read_memory, save_memory, search_memory
 from .core.skills import SkillLoader
@@ -52,7 +56,11 @@ def _active_agent():
 
 def _parse_key_values(text: str) -> dict[str, str]:
     values = {}
-    for part in text.split():
+    try:
+        parts = shlex.split(text)
+    except ValueError:
+        parts = text.split()
+    for part in parts:
         if "=" not in part:
             continue
         key, value = part.split("=", 1)
@@ -85,6 +93,29 @@ def tool_search_memory(keyword: str) -> str:
         keyword: Search keyword
     """
     return search_memory(keyword)
+
+
+@registry.tool(category="file")
+def tool_list_attachments() -> str:
+    """List files attached to the current conversation session."""
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    return agent.attachments.summary(include_preview=False)
+
+
+@registry.tool(category="file")
+def tool_read_attachment(attachment_id: str, max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS) -> str:
+    """Read an attached file by attachment id, extracting text from supported formats.
+
+    Args:
+        attachment_id: Attachment id from tool_list_attachments or the attached files block
+        max_chars: Maximum characters to return before truncating
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    return agent.attachments.read(attachment_id, max_chars=max_chars)
 
 
 @registry.tool(category="task")
@@ -261,7 +292,7 @@ def tool_runtime_output(runtime_id: str) -> str:
 
 @registry.tool(category="schedule")
 def tool_schedule_create(name: str, when: str, prompt: str, recurring: bool = False) -> str:
-    """Create a scheduled prompt.
+    """Create a scheduled prompt that runs in a background runtime lane when due.
 
     Args:
         name: Human-readable schedule name
@@ -273,7 +304,11 @@ def tool_schedule_create(name: str, when: str, prompt: str, recurring: bool = Fa
     if agent is None:
         return "(no active agent)"
     record = agent.scheduler.create(name, when, prompt, recurring)
-    return f"Schedule created: {record.schedule_id} [{record.when}] {record.name}"
+    return (
+        f"Schedule created: {record.schedule_id} [{record.when}] {record.name}\n"
+        "When it fires, it will run in the background. Use /schedule to see the "
+        "runtime id and /bg output <runtime_id> to read the result."
+    )
 
 
 @registry.tool(category="schedule")
@@ -296,6 +331,24 @@ def tool_schedule_delete(schedule_id: str) -> str:
     return f"Deleted {schedule_id}" if agent.scheduler.delete(schedule_id) else f"Unknown schedule: {schedule_id}"
 
 
+@registry.tool(category="schedule")
+def tool_schedule_run(schedule_id: str) -> str:
+    """Run a scheduled prompt immediately in the background runtime lane.
+
+    Args:
+        schedule_id: Schedule ID like job_abcd1234
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    record = agent.scheduler.trigger(schedule_id)
+    if record is None:
+        return f"Unknown schedule: {schedule_id}"
+    runtime = f" Runtime task: {record.last_runtime_id}" if record.last_runtime_id else ""
+    error = f" Error: {record.last_run_error}" if record.last_run_error else ""
+    return f"Schedule started: {record.schedule_id}.{runtime}{error}"
+
+
 @registry.tool(category="agent")
 def tool_subagent_run(role: str, task: str, context: str = "") -> str:
     """Run a one-shot isolated subagent and return its result.
@@ -305,7 +358,11 @@ def tool_subagent_run(role: str, task: str, context: str = "") -> str:
         task: Task for the subagent
         context: Optional short context
     """
-    subagent = SubAgent(role)
+    agent = _active_agent()
+    if agent is not None:
+        subagent = SubAgent(role, model=agent.model, llm_client=agent.llm_client)
+    else:
+        subagent = SubAgent(role)
     return subagent.run(task, context)
 
 
@@ -386,20 +443,25 @@ class FunHarnessAgent:
         on_tool_gen(index, name, chunk): Called for each tool argument token
         on_tool_call(name, args_preview, risk): Called when a tool is invoked
         on_tool_result(name, result, hook_feedback): Called with tool result
+        on_plan_token(str): Called while slash /plan is generating tasks
         on_status(str): Called with status messages
         on_approval(tool_name, arguments, reason) -> (bool, str): Called for approval
     """
 
     def __init__(self, mode="suggest", on_token=None, on_reasoning_token=None,
                  on_reasoning_start=None, on_tool_gen=None, on_tool_call=None,
-                 on_tool_result=None, on_status=None, on_approval=None):
+                 on_tool_result=None, on_plan_token=None, on_status=None,
+                 on_approval=None, model=MODEL, llm_client=None):
         self.mode = PermissionMode(mode)
+        self.model = model
+        self.llm_client = llm_client or client
         self.on_token = on_token
         self.on_reasoning_token = on_reasoning_token
         self.on_reasoning_start = on_reasoning_start
         self.on_tool_gen = on_tool_gen
         self.on_tool_call = on_tool_call
         self.on_tool_result = on_tool_result
+        self.on_plan_token = on_plan_token
         self.on_status = on_status
 
         # Initialize subsystems
@@ -407,7 +469,7 @@ class FunHarnessAgent:
         self.pm = PermissionManager(mode=self.mode)
         self.approval_flow = ApprovalFlow(self.pm, approval_callback=on_approval)
         self.session_mgr = SessionManager()
-        self.cost_tracker = CostTracker(model=MODEL)
+        self.cost_tracker = CostTracker(model=self.model)
         self.hook_registry = init_hooks()
         self.middleware_chain = init_middleware()
         self.skill_loader = SkillLoader()
@@ -422,9 +484,9 @@ class FunHarnessAgent:
         self.progress_tracker = ProgressTracker(".")
         self.git_tracker = GitTracker(".")
         self.runtime = RuntimeTaskManager(work_dir=".")
-        self.scheduler = ScheduleManager()
+        self.scheduler = ScheduleManager(on_fire=self._run_scheduled_prompt)
+        self.team = TeamManager(runtime=self.runtime, model=self.model, llm_client=self.llm_client)
         self.scheduler.start()
-        self.team = TeamManager(runtime=self.runtime)
 
         tasks_path = Path(".funharness/tasks.json")
         if tasks_path.exists():
@@ -435,6 +497,7 @@ class FunHarnessAgent:
         self.messages = [{"role": "system", "content": self._system_prompt}]
         self.current_session = Session()
         self.current_session.messages = self.messages
+        self.attachments = AttachmentManager(self.current_session.id)
         self.tool_calls_history = []
         self._interrupt_event = threading.Event()
 
@@ -459,6 +522,30 @@ class FunHarnessAgent:
         if self.on_status:
             self.on_status(msg)
 
+    def _run_scheduled_prompt(self, record) -> str:
+        def _work():
+            context_parts = []
+            if self.task_list:
+                context_parts.append(self.task_list.summary())
+            context_parts.append(self.team.summary())
+            context = "\n\n".join(part for part in context_parts if part)
+            subagent = SubAgent(
+                "scheduled-worker",
+                "Execute the scheduled prompt and return the useful result. "
+                "Be concise, concrete, and include any follow-up actions if needed.",
+                model=self.model,
+                llm_client=self.llm_client,
+            )
+            return subagent.run(record.prompt, context=context)
+
+        runtime_id = self.runtime.submit_callable(
+            "schedule",
+            f"{record.name}: {record.prompt[:80]}",
+            _work,
+        )
+        self._emit_status(f"Scheduled prompt started: {record.schedule_id} -> {runtime_id}")
+        return runtime_id
+
     def _drain_external_events(self, inject: bool = True) -> str:
         events = []
         events.extend(self.runtime.drain_notifications())
@@ -475,9 +562,11 @@ class FunHarnessAgent:
                     f"Full output: {event.get('output_file', '')}"
                 )
             elif event.get("type") == "scheduled_prompt":
+                runtime = f"\nRuntime task: {event.get('runtime_id')}" if event.get("runtime_id") else ""
+                error = f"\nError: {event.get('error')}" if event.get("error") else ""
                 lines.append(
                     f"[scheduled:{event['schedule_id']}] {event.get('name', '')}\n"
-                    f"{event.get('prompt', '')}"
+                    f"{event.get('prompt', '')}{runtime}{error}"
                 )
 
         text = "\n\n".join(lines)
@@ -504,6 +593,17 @@ class FunHarnessAgent:
             "schedules": len(self.scheduler.list()),
         }
 
+    def set_model_client(self, model: str, llm_client) -> None:
+        self.model = model
+        self.llm_client = llm_client
+        pricing_tracker = CostTracker(model=model)
+        pricing_tracker.total_input_tokens = self.cost_tracker.total_input_tokens
+        pricing_tracker.total_output_tokens = self.cost_tracker.total_output_tokens
+        pricing_tracker.call_count = self.cost_tracker.call_count
+        self.cost_tracker = pricing_tracker
+        self.team.model = model
+        self.team.llm_client = llm_client
+
     def handle_slash_command(self, cmd: str) -> str | None:
         """Handle slash commands. Returns response string or None if not a command."""
         parts = cmd.strip().split(maxsplit=1)
@@ -517,7 +617,8 @@ class FunHarnessAgent:
             "/context": lambda: (
                 f"System prompt: {len(self._system_prompt)} chars\n"
                 f"Total context: ~{estimate_tokens(self.messages)} tokens\n"
-                f"Messages: {len(self.messages)}"
+                f"Messages: {len(self.messages)}\n"
+                f"Soft limit: {CONTEXT_SOFT_LIMIT:,} chars"
             ),
             "/save": lambda: self._save_session(),
             "/memory": lambda: read_memory()[:800],
@@ -541,6 +642,7 @@ class FunHarnessAgent:
             "/logs": lambda: self.logger.tail(15),
             "/dashboard": lambda: (self.dashboard.report() if self.dashboard._records else "(no data yet)"),
             "/failures": lambda: self._handle_failures(),
+            "/attachments": lambda: self.attachments.summary(include_preview=True),
         }
 
         if command in handlers:
@@ -554,6 +656,16 @@ class FunHarnessAgent:
 
         if command == "/task":
             return self._handle_task(arg)
+
+        if command == "/attach":
+            if not arg:
+                return "Usage: /attach <path1> [path2 ...]"
+            return self._handle_attach(arg)
+
+        if command == "/detach":
+            if not arg:
+                return "Usage: /detach <id|all>"
+            return self._handle_detach(arg)
 
         if command == "/delegate" and arg:
             return self._handle_delegate(arg)
@@ -575,6 +687,9 @@ class FunHarnessAgent:
             "  /context    - Show context window info\n"
             "  /save       - Save current session\n"
             "  /memory     - Show saved memories\n"
+            "  /attach <p> - Attach one or more files to this session\n"
+            "  /attachments - List current session attachments\n"
+            "  /detach <id|all> - Remove attachment references\n"
             "  /mode [m]   - Show/change permission mode (auto/suggest/approve)\n"
             "  /perms      - Show permission settings\n"
             "  /hooks      - List registered hooks\n"
@@ -589,7 +704,7 @@ class FunHarnessAgent:
             "  /team       - List/create teammates\n"
             "  /delegate   - Delegate work to a teammate\n"
             "  /bg         - Run/check background runtime tasks\n"
-            "  /schedule   - Create/list/delete scheduled prompts\n"
+            "  /schedule   - Create/list/run/delete scheduled prompts\n"
             "  /events     - Drain runtime/schedule notifications\n"
             "  /trace      - Show trace timeline\n"
             "  /logs       - Show recent logs\n"
@@ -602,6 +717,7 @@ class FunHarnessAgent:
 
     def _save_session(self):
         self.current_session.messages = self.messages
+        self.attachments.save()
         return self.session_mgr.save(self.current_session)
 
     def _handle_new_session(self):
@@ -610,6 +726,7 @@ class FunHarnessAgent:
         self.session_mgr.save(self.current_session)
         # Reset conversation
         self.current_session = Session()
+        self.attachments = AttachmentManager(self.current_session.id)
         self._build_system_prompt()
         self.messages = [{"role": "system", "content": self._system_prompt}]
         self.current_session.messages = self.messages
@@ -619,6 +736,44 @@ class FunHarnessAgent:
         return (
             f"[New Session] Previous session saved.\n"
             f"Trace: {self.tracer.trace_id}"
+        )
+
+    def _handle_attach(self, arg: str) -> str:
+        try:
+            paths = shlex.split(arg, posix=(platform.system() != "Windows"))
+        except ValueError as exc:
+            return f"Attach failed: {exc}"
+        paths = [p.strip().strip('"').strip("'") for p in paths if p.strip()]
+        if not paths:
+            return "Usage: /attach <path1> [path2 ...]"
+
+        lines = ["Attached files:"]
+        for path in paths:
+            try:
+                record = self.attachments.add(path)
+            except Exception as exc:
+                lines.append(f"- {path}: failed ({exc})")
+                continue
+            lines.append(
+                f"- {record.id} {record.original_name} "
+                f"({record.extension or record.mime_type}, {record.size} bytes, {record.parse_status})"
+            )
+        return "\n".join(lines)
+
+    def _handle_detach(self, arg: str) -> str:
+        target = arg.strip().split(maxsplit=1)[0] if arg.strip() else ""
+        if not target:
+            return "Usage: /detach <id|all>"
+        return self.attachments.detach(target)
+
+    def _attachment_context(self) -> str:
+        if not self.attachments.list():
+            return ""
+        return (
+            "The user has attached files to this session. Use "
+            "tool_list_attachments and tool_read_attachment to inspect them "
+            "when needed; do not assume the preview is complete.\n\n"
+            f"{self.attachments.summary(include_preview=True)}"
         )
 
     def _handle_mode(self, arg):
@@ -644,7 +799,24 @@ class FunHarnessAgent:
 
     def _handle_plan(self, requirement):
         self._emit_status(f"Planning tasks for: {requirement[:60]}...")
-        self.task_list = plan_tasks(requirement)
+        reasoning_started = False
+
+        def _on_plan_reasoning(token: str):
+            nonlocal reasoning_started
+            if not reasoning_started:
+                reasoning_started = True
+                if self.on_reasoning_start:
+                    self.on_reasoning_start()
+            if self.on_reasoning_token:
+                self.on_reasoning_token(token)
+
+        self.task_list = plan_tasks(
+            requirement,
+            model=self.model,
+            llm_client=self.llm_client,
+            on_token=self.on_plan_token,
+            on_reasoning_token=_on_plan_reasoning,
+        )
         self.task_list.save(".funharness/tasks.json")
         self.progress_tracker.update(self.task_list)
         self._build_system_prompt()
@@ -793,6 +965,13 @@ class FunHarnessAgent:
         action = tokens[0].lower()
         if action == "delete" and len(tokens) >= 2:
             return f"Deleted {tokens[1]}" if self.scheduler.delete(tokens[1]) else f"Unknown schedule: {tokens[1]}"
+        if action == "run" and len(tokens) >= 2:
+            record = self.scheduler.trigger(tokens[1])
+            if record is None:
+                return f"Unknown schedule: {tokens[1]}"
+            runtime = f" Runtime task: {record.last_runtime_id}" if record.last_runtime_id else ""
+            error = f" Error: {record.last_run_error}" if record.last_run_error else ""
+            return f"Schedule started: {record.schedule_id}.{runtime}{error}"
         if action == "create" and len(tokens) >= 4:
             name = tokens[1]
             if tokens[2].lower() == "in" and len(tokens) >= 5:
@@ -805,8 +984,12 @@ class FunHarnessAgent:
                 when = tokens[2]
                 prompt = " ".join(tokens[3:])
             record = self.scheduler.create(name, when, prompt)
-            return f"Schedule created: {record.schedule_id} [{record.when}] {record.name}"
-        return "Usage: /schedule | /schedule create <name> <when> <prompt> | /schedule delete <id>"
+            return (
+                f"Schedule created: {record.schedule_id} [{record.when}] {record.name}\n"
+                "When it fires, it will run in the background. Use /schedule to see the "
+                "runtime id and /bg output <runtime_id> to read the result."
+            )
+        return "Usage: /schedule | /schedule create <name> <when> <prompt> | /schedule run <id> | /schedule delete <id>"
 
     def _handle_failures(self):
         findings = FailurePattern.analyze(self.messages, self.tool_calls_history)
@@ -854,7 +1037,11 @@ class FunHarnessAgent:
         """
         self.clear_interrupt()
         self.cost_tracker.mark_turn_start()
-        self.messages.append({"role": "user", "content": user_input})
+        attachment_context = self._attachment_context()
+        message_content = user_input
+        if attachment_context:
+            message_content = f"{user_input}\n\n{attachment_context}"
+        self.messages.append({"role": "user", "content": message_content})
         tools = registry.get_openai_schemas()
 
         loop_span = self.tracer.start_span(SpanKind.AGENT_LOOP, "agent_loop",
@@ -883,7 +1070,9 @@ class FunHarnessAgent:
                     "role": "user",
                     "content": "[SYSTEM] Middleware detected issues. Summarize and stop.",
                 })
-                stream = call_with_retry(self.messages, tools, stream=True)
+                stream = call_with_retry(
+                    self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
+                )
                 msg = process_stream_response(
                     stream, on_token=self.on_token,
                     on_reasoning_token=self.on_reasoning_token,
@@ -897,7 +1086,9 @@ class FunHarnessAgent:
             # Context compaction
             if should_compact(self.messages):
                 before = len(self.messages)
-                self.messages = compact_conversation(self.messages)
+                self.messages = compact_conversation(
+                    self.messages, model=self.model, llm_client=self.llm_client
+                )
                 self._emit_status(f"Context compacted: {before} -> {len(self.messages)} messages")
 
             # LLM call with tracing
@@ -917,7 +1108,9 @@ class FunHarnessAgent:
                 if original_on_reasoning:
                     original_on_reasoning(token)
 
-            stream = call_with_retry(self.messages, tools, stream=True)
+            stream = call_with_retry(
+                self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
+            )
             msg = process_stream_response(
                 stream, on_token=self.on_token,
                 on_reasoning_token=_on_reasoning_wrapper,
@@ -969,9 +1162,8 @@ class FunHarnessAgent:
                 result, hook_feedback = self._execute_tool(name, args_str)
                 self._raise_if_interrupted()
 
-                display = result if len(result) <= 200 else result[:200] + "...(truncated)"
                 if self.on_tool_result:
-                    self.on_tool_result(name, display, hook_feedback)
+                    self.on_tool_result(name, result, hook_feedback)
 
                 try:
                     parsed_args = json.loads(args_str)

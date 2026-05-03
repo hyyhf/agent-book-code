@@ -50,7 +50,16 @@ export function ActivityPanel({
       {panel === 'memory' ? (
         <MemoryPanel memory={memory} memoryDraft={memoryDraft} setMemoryDraft={setMemoryDraft} saveMemory={saveMemory} />
       ) : null}
-      {panel === 'agents' ? <AgentsPanel sendCommand={sendCommand} /> : null}
+      {panel === 'agents' ? (
+        <AgentsPanel
+          info={info}
+          panelData={panelData}
+          runtimeOutputs={runtimeOutputs}
+          sendCommand={sendCommand}
+          refreshPanel={refreshPanel}
+          loadRuntimeOutput={loadRuntimeOutput}
+        />
+      ) : null}
       {panel === 'dashboard' ? (
         <DashboardPanel
           panelData={panelData}

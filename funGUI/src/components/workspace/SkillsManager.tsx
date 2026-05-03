@@ -1,5 +1,5 @@
 import { Button, Empty, Spin, Tag } from '@arco-design/web-react';
-import { Code, Send } from '@icon-park/react';
+import { Code, BookmarkOne } from '@icon-park/react';
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import type { SkillMeta } from '../../api';
@@ -48,10 +48,17 @@ export function SkillsManager({ onSelectSkill }: { onSelectSkill: (skill: string
 
   return (
     <div className="manager-stage skills-stage">
-      <div className="manager-header">
-        <h2>技能库</h2>
-        <p>已安装的技能会从 skills 文件夹读取，并展示 SKILL.md 中的 name 与 description。</p>
+      <div className="manager-header skills-manager-header">
+        <div>
+          <h1>技能库</h1>
+          <p>从 <code>.funharness/skills</code> 自动读取已安装技能，点击后会把技能名写入输入框。</p>
+        </div>
+        <div className="skills-count-card" aria-label={`共 ${skills.length} 个技能`}>
+          <strong>{skills.length}</strong>
+          <span>个可用技能</span>
+        </div>
       </div>
+
       <div className="skill-card-grid">
         {skills.map((skill) => (
           <article className="skill-install-card" key={`${skill.path}:${skill.name}`}>
@@ -59,25 +66,19 @@ export function SkillsManager({ onSelectSkill }: { onSelectSkill: (skill: string
               <span className="skill-card-icon">
                 <Code />
               </span>
-              <Tag size="small" color="arcoblue">
+              <Tag size="small" className="skill-source-tag">
                 {skillFolder(skill.path)}
               </Tag>
             </div>
             <div className="skill-card-content">
-              <dl className="skill-meta-list">
-                <div>
-                  <dt>name</dt>
-                  <dd>{skill.name}</dd>
-                </div>
-                <div>
-                  <dt>description</dt>
-                  <dd>{skill.description || '暂无描述'}</dd>
-                </div>
-              </dl>
+              <span className="skill-field-label">技能名</span>
+              <h3>{skill.name}</h3>
+              <span className="skill-field-label">技能说明</span>
+              <p>{skill.description || '暂无说明'}</p>
             </div>
             <div className="skill-card-actions">
-              <Button type="primary" icon={<Send />} onClick={() => onSelectSkill(`@${skill.name} `)}>
-                使用技能
+              <Button type="primary" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap:'3px'}}onClick={() => onSelectSkill(`@${skill.name} `)}>
+                <BookmarkOne /> <span>调用技能</span>
               </Button>
             </div>
           </article>

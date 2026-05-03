@@ -1,7 +1,7 @@
 import { Empty, Input, Spin, Tooltip } from '@arco-design/web-react';
 import { DocumentFolder, Down, MenuFoldOne, Refresh, Right, Search } from '@icon-park/react';
 import type { CSSProperties } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { api } from '../../api';
 import type { FileEntry, FileListResponse, FileReadResponse } from '../../types';
 import { formatSize } from '../../utils/format';
@@ -12,23 +12,41 @@ function levelStyle(level: number): CSSProperties {
   return { '--tree-level': level } as CSSProperties;
 }
 
-function TreeNode({
+const TreeNode = memo(function TreeNode({
   entry,
   level,
   selectedPath,
+  refreshVersion,
   onPreview,
 }: {
   entry: FileEntry;
   level: number;
   selectedPath?: string;
+  refreshVersion: number;
   onPreview: (file: FileReadResponse) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<FileEntry[] | null>(null);
+  const [loadedVersion, setLoadedVersion] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const isDirectory = entry.kind === 'directory';
+
+  const loadChildren = async (version: number) => {
+    setLoading(true);
+    try {
+      const res = await api.listFiles(entry.path);
+      setChildren(res.entries);
+      setLoadedVersion(version);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      notify.error(`Failed to open ${entry.name}: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleDir = async () => {
     setError('');
@@ -36,21 +54,19 @@ function TreeNode({
       setExpanded(false);
       return;
     }
-    if (!children) {
-      setLoading(true);
-      try {
-        const res = await api.listFiles(entry.path);
-        setChildren(res.entries);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-        notify.error(`Failed to open ${entry.name}: ${message}`);
-      } finally {
-        setLoading(false);
-      }
+    if (!children || loadedVersion !== refreshVersion) {
+      await loadChildren(refreshVersion);
     }
     setExpanded(true);
   };
+
+  useEffect(() => {
+    if (!isDirectory || !expanded || loadedVersion === refreshVersion) {
+      return;
+    }
+    setError('');
+    void loadChildren(refreshVersion);
+  }, [refreshVersion]);
 
   const handleClick = async () => {
     if (isDirectory) {
@@ -100,15 +116,22 @@ function TreeNode({
             </div>
           ) : null}
           {children.map((child) => (
-            <TreeNode key={child.path} entry={child} level={level + 1} selectedPath={selectedPath} onPreview={onPreview} />
+            <TreeNode
+              key={child.path}
+              entry={child}
+              level={level + 1}
+              selectedPath={selectedPath}
+              refreshVersion={refreshVersion}
+              onPreview={onPreview}
+            />
           ))}
         </div>
       ) : null}
     </div>
   );
-}
+});
 
-export function WorkspaceTree({
+export const WorkspaceTree = memo(function WorkspaceTree({
   collapsed,
   selectedPath,
   onToggle,
@@ -120,6 +143,7 @@ export function WorkspaceTree({
   onPreview: (file: FileReadResponse) => void;
 }) {
   const [files, setFiles] = useState<FileListResponse | null>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -135,6 +159,7 @@ export function WorkspaceTree({
     setError('');
     try {
       setFiles(await api.workspace());
+      setRefreshVersion((value) => value + 1);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
@@ -174,7 +199,14 @@ export function WorkspaceTree({
             {!loading && !error && visibleEntries.length === 0 ? <div className="empty-file-result">没有匹配的文件</div> : null}
             {!error
               ? visibleEntries.map((entry) => (
-                  <TreeNode key={entry.path} entry={entry} level={0} selectedPath={selectedPath} onPreview={onPreview} />
+                  <TreeNode
+                    key={entry.path}
+                    entry={entry}
+                    level={0}
+                    selectedPath={selectedPath}
+                    refreshVersion={refreshVersion}
+                    onPreview={onPreview}
+                  />
                 ))
               : null}
           </div>
@@ -182,4 +214,4 @@ export function WorkspaceTree({
       ) : null}
     </aside>
   );
-}
+});

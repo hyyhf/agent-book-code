@@ -45,7 +45,9 @@ Security awareness:
 Memory & Knowledge:
 - Use tool_save_memory to record important discoveries.
 - Use tool_web_search to find information online.
-- Use tool_web_fetch to read web page content."""
+- Use tool_web_fetch to read web page content.
+- When users attach files, use tool_list_attachments and tool_read_attachment
+  to inspect them as needed instead of relying only on attachment previews."""
 
 
 def build_environment_block(cwd: str | None = None) -> str:

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -16,6 +16,9 @@ from .schemas import (
     ChatRequest,
     MemoryUpdateRequest,
     ModeRequest,
+    ModelProfileRequest,
+    ModelProfileSelectRequest,
+    ModelProfilesSaveRequest,
     PathRequest,
     RuntimeOutputRequest,
     SessionLoadRequest,
@@ -58,6 +61,7 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:4173",
             "app://funharness",
         ],
+        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):\d+$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -127,6 +131,16 @@ def create_app() -> FastAPI:
         service: AgentService = app.state.agent_service
         return service.tasks()
 
+    @app.get("/api/team")
+    async def team() -> dict:
+        service: AgentService = app.state.agent_service
+        return service.team()
+
+    @app.get("/api/team/{name}/inbox")
+    async def team_inbox(name: str) -> dict:
+        service: AgentService = app.state.agent_service
+        return service.team_inbox(name)
+
     @app.get("/api/schedules")
     async def schedules() -> list[dict]:
         service: AgentService = app.state.agent_service
@@ -147,6 +161,26 @@ def create_app() -> FastAPI:
         service: AgentService = app.state.agent_service
         return await service.slash(body.command)
 
+    @app.get("/api/attachments")
+    async def attachments() -> list[dict]:
+        service: AgentService = app.state.agent_service
+        return service.attachments()
+
+    @app.post("/api/attachments/upload")
+    async def upload_attachments(files: list[UploadFile] = File(...)) -> dict:
+        service: AgentService = app.state.agent_service
+        return await service.upload_attachments(files)
+
+    @app.delete("/api/attachments/{attachment_id}")
+    async def detach_attachment(attachment_id: str) -> dict:
+        service: AgentService = app.state.agent_service
+        return await service.detach_attachment(attachment_id)
+
+    @app.delete("/api/attachments")
+    async def detach_all_attachments() -> dict:
+        service: AgentService = app.state.agent_service
+        return await service.detach_all_attachments()
+
     @app.post("/api/approval")
     async def approval(body: ApprovalRequest) -> dict:
         service: AgentService = app.state.agent_service
@@ -166,6 +200,29 @@ def create_app() -> FastAPI:
     async def mode(body: ModeRequest) -> dict:
         service: AgentService = app.state.agent_service
         return await service.set_mode(body.mode)
+
+    @app.get("/api/model-profiles")
+    async def model_profiles() -> dict:
+        service: AgentService = app.state.agent_service
+        return service.model_profiles()
+
+    @app.put("/api/model-profiles")
+    async def save_model_profiles(body: ModelProfilesSaveRequest) -> dict:
+        service: AgentService = app.state.agent_service
+        return await service.save_model_profiles(
+            [item.model_dump() for item in body.profiles],
+            body.default_profile_id,
+        )
+
+    @app.post("/api/model-profiles/select")
+    async def select_model_profile(body: ModelProfileSelectRequest) -> dict:
+        service: AgentService = app.state.agent_service
+        return await service.set_model_profile(body.profile_id)
+
+    @app.post("/api/model-profiles/test")
+    async def test_model_profile(body: ModelProfileRequest) -> dict:
+        service: AgentService = app.state.agent_service
+        return service.test_model_profile(body.model_dump())
 
     @app.post("/api/session/new")
     async def new_session() -> dict:

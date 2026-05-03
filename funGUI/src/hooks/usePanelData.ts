@@ -30,6 +30,22 @@ export function usePanelData(panel: PanelKey | null) {
           const [tasks, runtime, schedules] = await Promise.all([api.tasks(), api.runtime(), api.schedules()]);
           setPanelData({ tasks, runtime, schedules } as DashboardData);
         }
+        if (nextPanel === 'agents') {
+          const [teamResult, tasks, runtime, schedules] = await Promise.all([
+            Promise.allSettled([api.team()]).then(([result]) => result),
+            api.tasks(),
+            api.runtime(),
+            api.schedules(),
+          ]);
+          const team =
+            teamResult.status === 'fulfilled'
+              ? teamResult.value
+              : { summary: '(team API unavailable)', members: [] };
+          if (teamResult.status === 'rejected') {
+            notify.warning('Team data is unavailable. Restart the backend to enable /api/team.');
+          }
+          setPanelData({ team, tasks, runtime, schedules } as DashboardData);
+        }
       } catch (error) {
         notify.error(`Failed to load panel data: ${errorText(error)}`);
       }

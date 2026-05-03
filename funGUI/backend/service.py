@@ -3,20 +3,24 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
+import tempfile
 import threading
 import time
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 
 from funharness.src.agent import FunHarnessAgent
-from funharness.src.core.llm import MODEL
+from funharness.src.core.attachments import AttachmentManager
 from funharness.src.core.session import Session
 
 from .events import EventBus
+from .model_config import ModelConfigStore, make_client
 
 
 class AgentService:
@@ -24,14 +28,20 @@ class AgentService:
         self.bus = bus
         self.workspace = workspace
         self.loop = loop
+        self.model_store = ModelConfigStore(workspace / ".funharness" / "model_profiles.json")
+        self.active_model_profile_id = self.model_store.config()["default_profile_id"]
+        active_profile = self.model_store.resolve(self.active_model_profile_id)
         self.agent = FunHarnessAgent(
             mode="suggest",
+            model=active_profile["model"],
+            llm_client=make_client(active_profile),
             on_token=self._on_token,
             on_reasoning_token=self._on_reasoning_token,
             on_reasoning_start=self._on_reasoning_start,
             on_tool_gen=self._on_tool_gen,
             on_tool_call=self._on_tool_call,
             on_tool_result=self._on_tool_result,
+            on_plan_token=self._on_plan_token,
             on_status=self._on_status,
             on_approval=self._on_approval,
         )
@@ -42,9 +52,17 @@ class AgentService:
 
     def snapshot(self) -> dict[str, Any]:
         info = self.agent.get_info()
+        model_config = self.model_store.public_config(self.active_model_profile_id)
+        active_profile = next(
+            (item for item in model_config["profiles"] if item["id"] == model_config["active_profile_id"]),
+            None,
+        )
         return {
             **info,
-            "model": MODEL,
+            "model": self.agent.model,
+            "model_profile_id": model_config["active_profile_id"],
+            "model_profile_name": active_profile["name"] if active_profile else self.agent.model,
+            "model_profiles": model_config["profiles"],
             "busy": self._busy,
             "workspace": str(self.workspace),
             "cwd": os.getcwd(),
@@ -62,6 +80,12 @@ class AgentService:
 
     async def publish_info(self) -> None:
         await self.bus.publish("info_update", self.snapshot())
+
+    async def publish_tasks_updated(self) -> None:
+        await self.bus.publish("tasks_updated", self.tasks())
+
+    def publish_tasks_updated_threadsafe(self) -> None:
+        self.publish_threadsafe("tasks_updated", self.tasks())
 
     def _set_busy(self, value: bool) -> None:
         with self._busy_lock:
@@ -84,6 +108,7 @@ class AgentService:
 
         self._ensure_idle()
         await self.bus.publish("run_started", {"kind": "chat"})
+        await self.publish_info()
         await self.bus.publish("user_message", {"content": text})
         threading.Thread(target=self._run_chat_worker, args=(text,), daemon=True).start()
         return {"accepted": True}
@@ -107,6 +132,7 @@ class AgentService:
             cmd = "/" + cmd
         self._ensure_idle()
         await self.bus.publish("run_started", {"kind": "slash", "command": cmd})
+        await self.publish_info()
         await self.bus.publish("user_message", {"content": cmd})
         threading.Thread(target=self._run_slash_worker, args=(cmd,), daemon=True).start()
         return {"accepted": True}
@@ -116,9 +142,13 @@ class AgentService:
             result = self.agent.handle_slash_command(command)
             if result is not None:
                 self.publish_threadsafe("system_message", {"content": result})
+            self._publish_task_completion_for_command(command, result or "")
+            if self._slash_updates_tasks(command):
+                self.publish_tasks_updated_threadsafe()
         except Exception as exc:
             self.publish_threadsafe("error", {"message": str(exc)})
         finally:
+            self.publish_threadsafe("reasoning_done", {})
             self._set_busy(False)
             self.publish_threadsafe("run_finished", {"kind": "slash", "command": command})
             self.publish_threadsafe("info_update", self.snapshot())
@@ -161,11 +191,36 @@ class AgentService:
         await self.publish_info()
         return {"ok": True, "message": result}
 
+    def model_profiles(self) -> dict[str, Any]:
+        return self.model_store.public_config(self.active_model_profile_id)
+
+    async def save_model_profiles(self, profiles: list[dict[str, Any]], default_profile_id: str) -> dict[str, Any]:
+        public_config = self.model_store.save(profiles, default_profile_id)
+        if not any(item["id"] == self.active_model_profile_id for item in public_config["profiles"]):
+            await self.set_model_profile(public_config["default_profile_id"])
+            return self.model_profiles()
+        await self.publish_info()
+        return public_config
+
+    async def set_model_profile(self, profile_id: str) -> dict[str, Any]:
+        profile = self.model_store.resolve(profile_id)
+        self.active_model_profile_id = profile["id"]
+        self.agent.set_model_client(profile["model"], make_client(profile))
+        await self.bus.publish(
+            "status",
+            {"message": f"模型已切换为 {profile.get('name') or profile['model']}"},
+        )
+        await self.publish_info()
+        return {"ok": True, "active_profile_id": self.active_model_profile_id, "model": profile["model"]}
+
+    def test_model_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
+        return self.model_store.test(profile)
+
     async def new_session(self) -> dict[str, Any]:
         result = self.agent.handle_slash_command("/new")
-        await self.bus.publish("system_message", {"content": result or ""})
+        await self.bus.publish("attachments_updated", {"attachments": self.attachments()})
         await self.publish_info()
-        return {"ok": True, "message": result}
+        return {"ok": True, "message": result, "attachments": self.attachments()}
 
     async def save_session(self) -> dict[str, Any]:
         result = self.agent.handle_slash_command("/save")
@@ -221,16 +276,58 @@ class AgentService:
         loaded.updated_at = session.updated_at
         self.agent.current_session = loaded
         self.agent.messages = messages
+        self.agent.attachments = AttachmentManager(loaded.id)
         self.agent.tool_calls_history.clear()
 
         payload = {
             "session_id": loaded.id,
             "title": loaded.title,
             "messages": self._messages_for_gui(messages),
+            "attachments": self.attachments(),
         }
         await self.bus.publish("session_loaded", payload)
+        await self.bus.publish("attachments_updated", {"attachments": self.attachments()})
         await self.publish_info()
         return {"ok": True, **payload}
+
+    def attachments(self) -> list[dict[str, Any]]:
+        return [asdict(record) for record in self.agent.attachments.list()]
+
+    async def upload_attachments(self, files: list[UploadFile]) -> dict[str, Any]:
+        if not files:
+            raise HTTPException(status_code=400, detail="No files uploaded")
+
+        records = []
+        with tempfile.TemporaryDirectory(prefix="funharness-upload-") as tmp:
+            tmp_dir = Path(tmp)
+            for upload in files:
+                filename = Path(upload.filename or "attachment").name
+                target = tmp_dir / filename
+                try:
+                    with target.open("wb") as handle:
+                        shutil.copyfileobj(upload.file, handle)
+                    records.append(self.agent.attachments.add(target))
+                finally:
+                    await upload.close()
+
+        payload = {"attachments": self.attachments(), "added": [asdict(r) for r in records]}
+        await self.bus.publish("attachments_updated", {"attachments": payload["attachments"]})
+        await self.publish_info()
+        return {"ok": True, **payload}
+
+    async def detach_attachment(self, attachment_id: str) -> dict[str, Any]:
+        message = self.agent.attachments.detach(attachment_id)
+        attachments = self.attachments()
+        await self.bus.publish("attachments_updated", {"attachments": attachments})
+        await self.publish_info()
+        return {"ok": True, "message": message, "attachments": attachments}
+
+    async def detach_all_attachments(self) -> dict[str, Any]:
+        message = self.agent.attachments.detach("all")
+        attachments = self.attachments()
+        await self.bus.publish("attachments_updated", {"attachments": attachments})
+        await self.publish_info()
+        return {"ok": True, "message": message, "attachments": attachments}
 
     def memory(self) -> dict[str, Any]:
         path = self.workspace / ".funharness" / "MEMORY.md"
@@ -258,6 +355,65 @@ class AgentService:
         return {
             "summary": task_list.summary() if task_list else "No task list. Use /plan to create one.",
             "tasks": [task.to_dict() for task in task_list.tasks] if task_list else [],
+        }
+
+    def task_completion_payload(self, task_id: str, message: str = "") -> dict[str, Any] | None:
+        task_list = self.agent.task_list
+        if task_list is None:
+            return None
+        task = task_list.get(task_id)
+        if task is None or task.status.value != "done":
+            return None
+        done, total = task_list.progress
+        return {
+            "task": task.to_dict(),
+            "progress": {
+                "done": done,
+                "total": total,
+                "percent": round(task_list.progress_pct),
+            },
+            "message": message,
+        }
+
+    def _publish_task_completion_for_command(self, command: str, result: str) -> None:
+        parts = command.strip().split()
+        if len(parts) < 2 or parts[0].lower() != "/done":
+            return
+        payload = self.task_completion_payload(parts[1], result)
+        if payload:
+            self.publish_threadsafe("task_completed", payload)
+
+    def _publish_task_completion_from_result(self, result: str) -> None:
+        parts = result.strip().split()
+        if len(parts) < 2 or parts[0] != "Task":
+            return
+        payload = self.task_completion_payload(parts[1], result)
+        if payload:
+            self.publish_threadsafe("task_completed", payload)
+
+    @staticmethod
+    def _slash_updates_tasks(command: str) -> bool:
+        head = command.strip().split(maxsplit=1)[0].lower()
+        return head in {"/plan", "/done", "/task"}
+
+    def team(self) -> dict[str, Any]:
+        members = []
+        for member in self.agent.team.list():
+            item = member.to_dict()
+            item["inbox_count"] = len(self.agent.team.peek_inbox(member.name))
+            members.append(item)
+        return {
+            "summary": self.agent.team.summary(),
+            "members": members,
+        }
+
+    def team_inbox(self, name: str) -> dict[str, Any]:
+        member = self.agent.team.get(name)
+        if member is None:
+            raise HTTPException(status_code=404, detail="Team member not found")
+        return {
+            "name": member.name,
+            "items": self.agent.team.peek_inbox(member.name),
         }
 
     def schedules(self) -> list[dict[str, Any]]:
@@ -379,6 +535,19 @@ class AgentService:
             "tool_result",
             {"name": name, "result": result, "hook_feedback": hook_feedback},
         )
+        if name in {
+            "tool_next_task",
+            "tool_complete_task",
+            "tool_fail_task",
+            "tool_task_create",
+            "tool_task_update",
+        }:
+            self.publish_tasks_updated_threadsafe()
+        if name == "tool_complete_task":
+            self._publish_task_completion_from_result(result)
+
+    def _on_plan_token(self, token: str) -> None:
+        self.publish_threadsafe("plan_delta", {"token": token})
 
     def _on_status(self, message: str) -> None:
         self.publish_threadsafe("status", {"message": message})

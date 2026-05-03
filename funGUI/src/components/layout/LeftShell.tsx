@@ -12,10 +12,11 @@ import {
   Time,
   MemoryCardOne
 } from '@icon-park/react';
+import { memo } from 'react';
 import type { PanelKey } from '../../types';
 import { RailButton } from './RailButton';
 
-export function LeftShell({
+export const LeftShell = memo(function LeftShell({
   collapsed,
   panel,
   onToggleCollapsed,
@@ -36,7 +37,7 @@ export function LeftShell({
         <button className="icon-button brand-button" onClick={onToggleCollapsed} aria-label={collapsed ? '展开导航' : '收起导航'}>
           {collapsed ? <MenuUnfoldOne /> : <MenuFoldOne />}
         </button>
-        {!collapsed ? <strong>FunHarness</strong> : null}
+        {!collapsed ? <img src='./fh_text_logo_rb.png' style={{ height: '28px', width: 'auto', marginLeft: '5px'}} alt="logo"/> : null}
       </div>
       <nav className="rail">
         <RailButton collapsed={collapsed} icon={<Home size={20} />} label="主页" description="回到对话" active={!panel} onClick={() => setPanel(null)} />
@@ -52,4 +53,4 @@ export function LeftShell({
       </nav>
     </aside>
   );
-}
+});

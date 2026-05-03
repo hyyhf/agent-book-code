@@ -33,7 +33,7 @@ export function PanelHeader({ panel, refreshPanel }: { panel: PanelKey; refreshP
         <strong>{panelTitle(panel)}</strong>
         <span>{panelDescription(panel)}</span>
       </div>
-      <Button size="small" type="secondary" icon={<Refresh />} onClick={() => void refreshPanel()}>
+      <Button size="small" type="secondary"  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center',gap: '5px' }}icon={<Refresh />} onClick={() => void refreshPanel()}>
         刷新
       </Button>
     </div>

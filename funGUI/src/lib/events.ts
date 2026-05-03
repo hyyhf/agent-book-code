@@ -25,6 +25,18 @@ function sessionItems(messages: Array<Record<string, unknown>>): ChatItem[] {
   });
 }
 
+function completeLatestToolGeneration(items: ChatItem[], name: string): ChatItem[] {
+  const copy = [...items];
+  for (let index = copy.length - 1; index >= 0; index -= 1) {
+    const item = copy[index];
+    if (item.type === 'tool_gen' && item.name === name && !item.done) {
+      copy[index] = { ...item, done: true };
+      break;
+    }
+  }
+  return copy;
+}
+
 export function appendEvent(items: ChatItem[], event: GuiEvent): ChatItem[] {
   const payload = event.payload;
   if (event.type === 'session_loaded') {
@@ -61,24 +73,55 @@ export function appendEvent(items: ChatItem[], event: GuiEvent): ChatItem[] {
   if (event.type === 'reasoning_done') {
     return items.map((item) => (item.type === 'reasoning' ? { ...item, done: true } : item));
   }
+  if (event.type === 'plan_delta') {
+    const token = String(payload.token || '');
+    const copy = [...items];
+    for (let index = copy.length - 1; index >= 0; index -= 1) {
+      const item = copy[index];
+      if (item.type === 'plan_draft' && !item.done) {
+        copy[index] = { ...item, content: item.content + token };
+        return copy;
+      }
+    }
+    return [...items, { id: nextId('plan'), type: 'plan_draft', content: token, done: false }];
+  }
+  if (event.type === 'task_completed') {
+    const progress = (payload.progress || {}) as Record<string, unknown>;
+    return [
+      ...items,
+      {
+        id: nextId('task_done'),
+        type: 'task_completion',
+        task: (payload.task || null) as never,
+        progress: {
+          done: Number(progress.done || 0),
+          total: Number(progress.total || 0),
+          percent: Number(progress.percent || 0),
+        },
+        content: String(payload.message || ''),
+      },
+    ];
+  }
   if (event.type === 'tool_gen_delta') {
+    const callIndex = Number(payload.index || 0);
     const name = String(payload.name || 'tool');
     const chunk = String(payload.chunk || '');
     const copy = [...items];
     const last = copy[copy.length - 1];
-    if (last?.type === 'tool_gen' && last.name === name) {
+    if (last?.type === 'tool_gen' && last.name === name && last.index === callIndex) {
       copy[copy.length - 1] = { ...last, content: last.content + chunk };
       return copy;
     }
-    return [...items, { id: nextId('tool_gen'), type: 'tool_gen', name, content: chunk }];
+    return [...items, { id: nextId('tool_gen'), type: 'tool_gen', index: callIndex, name, content: chunk, done: false }];
   }
   if (event.type === 'tool_call') {
+    const name = String(payload.name || '');
     return [
-      ...items,
+      ...completeLatestToolGeneration(items, name),
       {
         id: nextId('tool'),
         type: 'tool',
-        name: String(payload.name || ''),
+        name,
         risk: String(payload.risk || 'execute'),
         preview: payload.preview,
       },
@@ -91,7 +134,7 @@ export function appendEvent(items: ChatItem[], event: GuiEvent): ChatItem[] {
       reason: String(payload.reason || ''),
       arguments: payload.arguments,
     };
-    const copy = [...items];
+    const copy = completeLatestToolGeneration(items, approval.toolName);
     for (let index = copy.length - 1; index >= 0; index -= 1) {
       const item = copy[index];
       if (item.type === 'tool' && item.name === approval.toolName && !item.result) {
@@ -152,7 +195,12 @@ export function appendEvent(items: ChatItem[], event: GuiEvent): ChatItem[] {
     return [...items, { id: nextId('error'), type: 'error', content: String(payload.message || '') }];
   }
   if (event.type === 'run_finished') {
-    return items.map((item) => (item.type === 'assistant' ? { ...item, streaming: false } : item));
+    return items.map((item) => {
+      if (item.type === 'assistant') return { ...item, streaming: false };
+      if (item.type === 'plan_draft') return { ...item, done: true };
+      if (item.type === 'tool_gen') return { ...item, done: true };
+      return item;
+    });
   }
   return items;
 }

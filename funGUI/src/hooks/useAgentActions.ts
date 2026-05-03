@@ -16,6 +16,9 @@ export function useAgentActions({
   setPanel,
   setInfo,
   resetRuntimeOutputs,
+  refreshAttachments,
+  hasAttachments,
+  planMode,
 }: {
   input: string;
   setInput: (value: string) => void;
@@ -23,6 +26,9 @@ export function useAgentActions({
   setPanel: (panel: PanelKey | null) => void;
   setInfo: (value: AgentInfo | null) => void;
   resetRuntimeOutputs: () => void;
+  refreshAttachments: () => Promise<void>;
+  hasAttachments: boolean;
+  planMode: boolean;
 }) {
   const pushError = useCallback(
     (prefix: string, error: unknown) => {
@@ -35,8 +41,15 @@ export function useAgentActions({
 
   const sendMessage = useCallback(
     async (value = input) => {
-      const text = value.trim();
+      const typedText = value.trim();
+      let text = typedText;
+      if (!text && hasAttachments) {
+        text = '请阅读并总结我上传的附件。';
+      }
       if (!text) return;
+      if (planMode && typedText && !text.startsWith('/')) {
+        text = `/plan ${text}`;
+      }
       setInput('');
       try {
         if (text.startsWith('/')) {
@@ -45,11 +58,11 @@ export function useAgentActions({
           await api.chat(text);
         }
       } catch (error) {
-        setInput(text);
+        setInput(typedText || text);
         pushError('Failed to send message', error);
       }
     },
-    [input, pushError, setInput],
+    [hasAttachments, input, planMode, pushError, setInput],
   );
 
   const resolveApproval = useCallback(
@@ -67,6 +80,7 @@ export function useAgentActions({
     async (sessionId: string) => {
       try {
         await api.loadSession(sessionId);
+        await refreshAttachments();
         setPanel(null);
         notify.success('Session loaded');
       } catch (error) {
@@ -74,7 +88,7 @@ export function useAgentActions({
         throw error;
       }
     },
-    [pushError, setPanel],
+    [pushError, refreshAttachments, setPanel],
   );
 
   const saveSession = useCallback(async () => {
@@ -92,11 +106,13 @@ export function useAgentActions({
       setItems([]);
       setPanel(null);
       resetRuntimeOutputs();
+      await refreshAttachments();
       setInfo((await api.info()) as AgentInfo);
+      notify.success('刚才的会话已保存');
     } catch (error) {
       pushError('Failed to start a new session', error);
     }
-  }, [pushError, resetRuntimeOutputs, setInfo, setItems, setPanel]);
+  }, [pushError, refreshAttachments, resetRuntimeOutputs, setInfo, setItems, setPanel]);
 
   return {
     sendMessage,

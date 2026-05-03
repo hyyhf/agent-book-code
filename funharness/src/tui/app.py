@@ -9,7 +9,13 @@ import json
 import threading
 import time
 
+from rich import box
+from rich.console import Group
+from rich.errors import MarkupError
 from rich.markup import escape
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -36,6 +42,23 @@ TOOL_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "
 # ================================================================
 #  Widget Classes
 # ================================================================
+
+
+def _safe_rich_markup(markup: str):
+    """Pre-parse markup so bad dynamic text cannot crash Textual rendering."""
+    try:
+        return Text.from_markup(markup)
+    except MarkupError:
+        return Text(markup)
+
+
+def _plan_draft_renderable(text: str = "") -> Text:
+    """Render slash /plan draft text without parsing model output as markup."""
+    renderable = Text()
+    renderable.append("Plan draft\n", style=f"bold {OCHRE_BRIGHT}")
+    renderable.append(text or "(waiting for model output...)", style=TEXT_DIM)
+    return renderable
+
 
 class BannerWidget(Static):
     DEFAULT_CSS = """
@@ -403,7 +426,7 @@ class ToolCallBlock(Static):
 
     def __init__(self, call_markup: str, tool_name: str = "",
                  risk_label: str = "", **kwargs):
-        super().__init__(call_markup, **kwargs)
+        super().__init__(_safe_rich_markup(call_markup), **kwargs)
         self._call_markup = call_markup
         self._result_markup = ""
         self._hook_markup = ""
@@ -447,7 +470,7 @@ class ToolCallBlock(Static):
         """Refresh displayed arguments while keeping the timer running."""
         self._call_markup = call_markup
         if not self._result_markup:
-            self.update(call_markup)
+            self.update(_safe_rich_markup(call_markup))
 
     def _stop_timer(self) -> None:
         self._elapsed = time.monotonic() - self._started_at
@@ -484,7 +507,7 @@ class ToolCallBlock(Static):
         parts.append(self._result_markup)
         if self._hook_markup:
             parts.append(self._hook_markup)
-        self.update("\n".join(parts))
+        self.update(_safe_rich_markup("\n".join(parts)))
 
 
 def _format_tool_args_preview(preview: str) -> str:
@@ -502,6 +525,103 @@ def _format_tool_args_preview(preview: str) -> str:
     return (
         f"[{OCHRE_MUTED}]└─[/] [{TEXT_SECONDARY}]args[/] "
         f"[{OCHRE_MUTED}]⟼[/] [{TEXT_DIM}]{escape(rendered)}[/]"
+    )
+
+
+def _format_bytes(size: int) -> str:
+    units = ("B", "KB", "MB", "GB")
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} B"
+
+
+def _preview_text(text: str, max_chars: int, max_lines: int) -> str:
+    original_len = len(text)
+    if len(text) > max_chars:
+        text = text[:max_chars].rstrip() + f"\n...(preview truncated, total {original_len} chars)"
+    lines = text.splitlines()
+    original_lines = len(lines)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines] + [f"...({original_lines - max_lines} more preview lines)"]
+    return "\n".join(lines)
+
+
+def _task_status_style(status: str) -> str:
+    return {
+        "done": SUCCESS_COLOR,
+        "skipped": OCHRE_MUTED,
+        "in_progress": INFO_COLOR,
+        "failed": ERROR_COLOR,
+        "pending": TEXT_SECONDARY,
+        "ready": OCHRE_BRIGHT,
+    }.get(status, TEXT_SECONDARY)
+
+
+def _render_task_list_panel(task_list, title: str = "Task Plan"):
+    done, total = task_list.progress
+    pct = task_list.progress_pct
+    ready_ids = {task.task_id for task in task_list.ready()}
+    bar_width = 24
+    filled = int(round((pct / 100) * bar_width)) if total else 0
+    progress_bar = "[" + "#" * filled + "-" * (bar_width - filled) + "]"
+
+    header = Table.grid(expand=True)
+    header.add_column(ratio=2)
+    header.add_column(justify="right", ratio=1)
+    header.add_row(
+        Text(task_list.project_name or "FunHarness Tasks", style=f"bold {TEXT_PRIMARY}"),
+        Text(f"{done}/{total} done  {pct:.0f}%", style=f"bold {OCHRE_BRIGHT}"),
+    )
+    header.add_row(
+        Text(f"{progress_bar}  {len(ready_ids)} ready", style=OCHRE_MUTED),
+        Text(""),
+    )
+
+    table = Table(
+        expand=True,
+        box=box.SIMPLE_HEAVY,
+        show_edge=False,
+        header_style=f"bold {OCHRE_BRIGHT}",
+        border_style=OCHRE_MUTED,
+    )
+    table.add_column("ID", no_wrap=True, style=f"bold {TEXT_PRIMARY}")
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Title", ratio=3, style=TEXT_SECONDARY)
+    table.add_column("Depends", ratio=1, style=TEXT_DIM)
+    table.add_column("Verify / Files", ratio=2, style=TEXT_DIM)
+
+    order = {"in_progress": 0, "ready": 1, "pending": 2, "failed": 3, "done": 4, "skipped": 5}
+
+    def sort_key(task):
+        status = task.status.value
+        if status == "pending" and task.task_id in ready_ids:
+            status = "ready"
+        return (order.get(status, 99), task.task_id)
+
+    for task in sorted(task_list.tasks, key=sort_key):
+        status = task.status.value
+        if status == "pending" and task.task_id in ready_ids:
+            status = "ready"
+        style = _task_status_style(status)
+        deps = ", ".join(task.depends_on) if task.depends_on else "-"
+        detail = ", ".join(task.artifacts) if task.artifacts else (task.verify or "-")
+        table.add_row(
+            Text(task.task_id),
+            Text(status.replace("_", " "), style=f"bold {style}"),
+            Text(task.title or "(untitled)"),
+            Text(deps),
+            Text(detail),
+        )
+
+    return Panel(
+        Group(header, Text(""), table),
+        title=f"[bold {OCHRE_BRIGHT}]{title}[/]",
+        border_style=OCHRE_PRIMARY,
     )
 
 
@@ -595,6 +715,19 @@ class SystemMessage(Static):
     """
 
 
+class RichSystemBlock(Static):
+    """System/slash-command response rendered with Rich."""
+
+    DEFAULT_CSS = f"""
+    RichSystemBlock {{
+        height: auto;
+        margin: 0 2 1 4;
+        padding: 0 1 0 1;
+        color: {TEXT_SECONDARY};
+    }}
+    """
+
+
 class PermissionModeLabel(Static):
     """Persistent label below the input box showing current permission mode."""
 
@@ -641,8 +774,8 @@ class PromptInput(Input):
 #  Main App
 # ================================================================
 
-# Slash commands that involve LLM/network calls and must run in background
-_SLOW_SLASH_COMMANDS = {"/plan"}
+# Slash commands that can take noticeable time and must run in background
+_SLOW_SLASH_COMMANDS = {"/plan", "/attach"}
 
 
 class FunHarnessApp(App):
@@ -683,6 +816,9 @@ class FunHarnessApp(App):
         self._current_md_buffer = ""
         self._is_streaming = False
         self._streaming_widget: StreamingText | None = None
+        self._plan_stream_widget: StreamingText | None = None
+        self._plan_stream_buffer = ""
+        self._last_plan_stream_render_at = 0.0
         self._thinking_widget: ThinkingIndicator | None = None
         self._reasoning_widget: ReasoningBlock | None = None
         self._tool_gen_widget: ToolGenBlock | None = None
@@ -701,6 +837,7 @@ class FunHarnessApp(App):
         self._approval_widget: ApprovalPrompt | None = None
         self._agent_busy = False
         self._interrupt_requested = False
+        self._events_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(
@@ -723,6 +860,16 @@ class FunHarnessApp(App):
         mode_label = self.query_one("#mode-label", PermissionModeLabel)
         mode_label.set_mode(self._permission_modes[self._current_mode_index])
         self.query_one("#prompt-input", PromptInput).focus()
+        self._events_timer = self.set_interval(5.0, self._poll_external_events)
+
+    def _poll_external_events(self) -> None:
+        if not self._agent or self._agent_busy:
+            return
+        text = self._agent._drain_external_events(inject=False)
+        if not text:
+            return
+        self._show_system_response(text)
+        self._update_status()
 
     def _init_agent(self):
         import os
@@ -735,6 +882,7 @@ class FunHarnessApp(App):
             on_tool_gen=self._on_tool_gen_sync,
             on_tool_call=self._on_tool_call_sync,
             on_tool_result=self._on_tool_result_sync,
+            on_plan_token=self._on_plan_token_sync,
             on_status=self._on_status_sync,
             on_approval=self._on_approval_sync,
         )
@@ -778,6 +926,9 @@ class FunHarnessApp(App):
 
     def _on_tool_result_sync(self, name: str, result: str, hook_feedback: str):
         self._safe_callback(self._show_tool_result, name, result, hook_feedback)
+
+    def _on_plan_token_sync(self, token: str):
+        self._safe_callback(self._append_plan_token, token)
 
     def _on_status_sync(self, msg: str):
         self._safe_callback(self._show_status, msg)
@@ -921,6 +1072,37 @@ class FunHarnessApp(App):
             self._tool_gen_widget.remove()
             self._tool_gen_widget = None
 
+    # ---- Slash /plan streaming ----
+
+    def _append_plan_token(self, token: str):
+        self._hide_thinking()
+        scroll = self.query_one("#chat-scroll", VerticalScroll)
+        if self._plan_stream_widget is None:
+            self._plan_stream_buffer = ""
+            self._plan_stream_widget = StreamingText(_plan_draft_renderable())
+            scroll.mount(self._plan_stream_widget)
+            self._scroll_bottom()
+        if not token:
+            return
+
+        self._finish_reasoning()
+        self._plan_stream_buffer += token
+        now = time.monotonic()
+        if "\n" in token or now - self._last_plan_stream_render_at >= STREAM_RENDER_INTERVAL:
+            self._last_plan_stream_render_at = now
+            text = self._plan_stream_buffer.strip()
+            if len(text) > 1800:
+                text = "...(earlier plan draft hidden)\n" + text[-1800:]
+            self._plan_stream_widget.update(_plan_draft_renderable(text))
+            self._scroll_bottom()
+
+    def _finish_plan_stream(self):
+        if self._plan_stream_widget is not None:
+            self._plan_stream_widget.remove()
+            self._plan_stream_widget = None
+        self._plan_stream_buffer = ""
+        self._last_plan_stream_render_at = 0.0
+
     # ---- Streaming ----
 
     def _append_token(self, token: str):
@@ -1015,19 +1197,19 @@ class FunHarnessApp(App):
             result_color = SUCCESS_COLOR
 
         result_markup = (
-            f"[{result_color}]{result_icon}[/] [{TEXT_SECONDARY}]{display}[/]"
+            f"[{result_color}]{escape(result_icon)}[/] [{TEXT_SECONDARY}]{display}[/]"
         )
 
         hook_markup = ""
         if hook_feedback:
-            hook_markup = f"[{OCHRE_DIM}][hook] {escape(hook_feedback)}[/]"
+            hook_markup = f"[{OCHRE_DIM}]{escape('[hook]')} {escape(hook_feedback)}[/]"
 
         if self._last_tool_block is not None:
             self._last_tool_block.add_result(result_markup, hook_markup)
         else:
             # Fallback: create standalone result block
             scroll = self.query_one("#chat-scroll", VerticalScroll)
-            scroll.mount(SystemMessage(result_markup))
+            scroll.mount(SystemMessage(_safe_rich_markup(result_markup)))
 
         # For tool_write_file, show a file content preview
         if self._last_tool_name == "tool_write_file" and not has_error:
@@ -1056,7 +1238,7 @@ class FunHarnessApp(App):
     def _show_status(self, msg: str):
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         scroll.mount(SystemMessage(
-            f"[{TEXT_DIM}][status] {escape(msg)}[/]"
+            f"[{TEXT_DIM}]{escape('[status]')} {escape(msg)}[/]"
         ))
         self._scroll_bottom()
 
@@ -1074,6 +1256,93 @@ class FunHarnessApp(App):
             f"[{TEXT_SECONDARY}]{escape(text)}[/]"
         ))
         self._scroll_bottom()
+
+    def _show_rich_response(self, renderable):
+        scroll = self.query_one("#chat-scroll", VerticalScroll)
+        scroll.mount(RichSystemBlock(renderable))
+        self._scroll_bottom()
+
+    def _show_attachments_response(self):
+        if not self._agent:
+            return
+        records = self._agent.attachments.list()
+        if not records:
+            self._show_rich_response(Panel(
+                Text("No files attached to this session.", style=TEXT_DIM),
+                title=f"[bold {OCHRE_BRIGHT}]Attachments[/]",
+                border_style=OCHRE_MUTED,
+            ))
+            return
+
+        blocks = []
+        header = Text(
+            f"{len(records)} file(s) attached  |  /detach <id>  |  /detach all",
+            style=TEXT_DIM,
+        )
+        blocks.append(header)
+        for record in records:
+            meta = Table.grid(expand=True)
+            meta.add_column(ratio=1, style=TEXT_DIM)
+            meta.add_column(ratio=4, style=TEXT_SECONDARY)
+            meta.add_row("id", record.id)
+            meta.add_row("name", record.original_name)
+            meta.add_row("type", record.extension or record.mime_type)
+            meta.add_row("size", _format_bytes(record.size))
+            meta.add_row("status", record.parse_status)
+            meta.add_row("path", record.stored_path)
+
+            preview = _preview_text(record.preview, max_chars=900, max_lines=8)
+            preview_block = Text(preview or "(no preview)", style=TEXT_DIM)
+            content = Group(meta, Text("\nPreview", style=f"bold {OCHRE_MUTED}"), preview_block)
+            status_style = SUCCESS_COLOR if record.parse_status == "ok" else ERROR_COLOR
+            blocks.append(Panel(
+                content,
+                title=f"[bold {OCHRE_BRIGHT}]{record.original_name}[/]",
+                subtitle=f"[{status_style}]{record.parse_status}[/]",
+                border_style=OCHRE_MUTED,
+            ))
+
+        self._show_rich_response(Panel(
+            Group(*blocks),
+            title=f"[bold {OCHRE_BRIGHT}]Attachments[/]",
+            border_style=OCHRE_PRIMARY,
+        ))
+
+    def _show_skills_response(self):
+        if not self._agent:
+            return
+        skills = self._agent.skill_loader.list_skills()
+        if not skills:
+            self._show_rich_response(Panel(
+                Text("No skills found in .funharness/skills.", style=TEXT_DIM),
+                title=f"[bold {OCHRE_BRIGHT}]Skills[/]",
+                border_style=OCHRE_MUTED,
+            ))
+            return
+
+        table = Table(
+            title=f"Available Skills ({len(skills)})",
+            expand=True,
+            show_lines=True,
+            header_style=f"bold {OCHRE_BRIGHT}",
+            border_style=OCHRE_MUTED,
+        )
+        table.add_column("Name", style=f"bold {TEXT_PRIMARY}", no_wrap=True)
+        table.add_column("Description", style=TEXT_SECONDARY, ratio=3)
+        table.add_column("Path", style=TEXT_DIM, ratio=2)
+        for skill in skills:
+            table.add_row(
+                str(skill.get("name", "")),
+                str(skill.get("description", "") or "(no description)"),
+                str(skill.get("path", "")),
+            )
+
+        self._show_rich_response(Panel(
+            table,
+            title=f"[bold {OCHRE_BRIGHT}]Skills[/]",
+            subtitle=f"[{TEXT_DIM}]Loaded from .funharness/skills[/]",
+            border_style=OCHRE_PRIMARY,
+        ))
 
     def _scroll_bottom(self):
         scroll = self.query_one("#chat-scroll", VerticalScroll)
@@ -1127,9 +1396,20 @@ class FunHarnessApp(App):
             self._show_user_message(user_input)
             # Commands that involve LLM/network calls must run in background
             cmd = user_input.strip().split(maxsplit=1)[0].lower()
+            if cmd == "/attachments":
+                self._show_attachments_response()
+                self._update_status()
+                return
+            if cmd == "/skills":
+                self._show_skills_response()
+                self._update_status()
+                return
             if cmd in _SLOW_SLASH_COMMANDS:
                 input_widget.disabled = True
-                self._show_thinking()
+                if cmd == "/plan":
+                    self._append_plan_token("")
+                else:
+                    self._show_thinking()
                 self._run_slow_slash(user_input)
                 return
             result = self._agent.handle_slash_command(user_input)
@@ -1175,6 +1455,7 @@ class FunHarnessApp(App):
     def _after_slow_slash(self):
         """Cleanup after a slow slash command finishes."""
         self._hide_thinking()
+        self._finish_reasoning()
         self._update_status()
         input_widget = self.query_one("#prompt-input", PromptInput)
         input_widget.disabled = False

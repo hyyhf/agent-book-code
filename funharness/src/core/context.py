@@ -22,9 +22,9 @@ _SKIP_DIRS = {
     ".next", "dist", "build", "target", ".idea", ".vscode",
 }
 
-CONTEXT_SOFT_LIMIT = 80000
-TOOL_RESULT_MAX_CHARS = 3000
-KEEP_RECENT_TOOL_RESULTS = 3
+CONTEXT_SOFT_LIMIT = 2_400_000
+TOOL_RESULT_MAX_CHARS = 80_000
+KEEP_RECENT_TOOL_RESULTS = 8
 
 
 def detect_project_configs(cwd: str | None = None) -> dict[str, str]:
@@ -279,7 +279,7 @@ def _recent_messages_with_valid_tool_boundaries(
     return conversation[start:]
 
 
-def compact_conversation(messages: list[dict], model: str = MODEL) -> list[dict]:
+def compact_conversation(messages: list[dict], model: str = MODEL, llm_client=None) -> list[dict]:
     if len(messages) < 6:
         return messages
     system_msg = messages[0] if messages[0].get("role") == "system" else None
@@ -307,13 +307,14 @@ def compact_conversation(messages: list[dict], model: str = MODEL) -> list[dict]
     summary_text = "\n".join(lines)
 
     try:
-        response = client.chat.completions.create(
+        active_client = llm_client or client
+        response = active_client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": "You summarize conversations concisely."},
                 {"role": "user", "content": f"Summarize this conversation, preserving actionable info:\n{summary_text}"},
             ],
-            max_tokens=1000,
+            max_tokens=4000,
         )
         summary = response.choices[0].message.content or "(summary unavailable)"
     except Exception as e:

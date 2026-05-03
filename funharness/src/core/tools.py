@@ -15,6 +15,9 @@ from typing import get_type_hints
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
+from .attachments import parse_document
+from .permissions import decode_process_output, format_command_output
+
 # ----------------------------------------------------------------
 #  ToolRegistry
 # ----------------------------------------------------------------
@@ -130,15 +133,11 @@ def tool_read_file(path: str) -> str:
         path: File path to read (relative or absolute)
     """
     try:
-        text = Path(path).read_text(encoding="utf-8")
-        line_count = text.count("\n") + (1 if text else 0)
-        return f"[{line_count} lines]\n{text}"
+        return parse_document(Path(path))
     except FileNotFoundError:
         return f"Error: file '{path}' not found"
     except PermissionError:
         return f"Error: permission denied for '{path}'"
-    except UnicodeDecodeError:
-        return f"Error: '{path}' is not a text file or encoding unsupported"
     except Exception as e:
         return f"Read failed: {e}"
 
@@ -203,7 +202,6 @@ def tool_run_command(command: str) -> str:
             "shell": True,
             "stdout": subprocess.PIPE,
             "stderr": subprocess.PIPE,
-            "text": True,
             "cwd": os.getcwd(),
         }
         if platform.system() != "Windows":
@@ -211,7 +209,7 @@ def tool_run_command(command: str) -> str:
 
         proc = subprocess.Popen(command, **popen_kwargs)
         try:
-            stdout, stderr = proc.communicate(timeout=30)
+            stdout_bytes, stderr_bytes = proc.communicate(timeout=30)
         except subprocess.TimeoutExpired:
             # Kill entire process tree on Windows
             try:
@@ -228,14 +226,11 @@ def tool_run_command(command: str) -> str:
             proc.wait(timeout=5)
             return "Error: command timed out (30s)"
 
-        parts = []
-        if stdout:
-            parts.append(stdout)
-        if stderr:
-            parts.append(f"[stderr]\n{stderr}")
-        output = "\n".join(parts) if parts else "(no output)"
-        if len(output) > 10000:
-            output = output[:10000] + f"\n...(truncated, total {len(output)} chars)"
+        stdout = decode_process_output(stdout_bytes)
+        stderr = decode_process_output(stderr_bytes)
+        output = format_command_output(
+            command, os.getcwd(), stdout, stderr, 10000
+        )
         return f"[exit={proc.returncode}]\n{output}"
     except Exception as e:
         return f"Command failed: {e}"

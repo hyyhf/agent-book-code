@@ -349,7 +349,8 @@ def _parse_list(value: str | list[str] | None) -> list[str]:
     return [part.strip() for part in str(value).split(",") if part.strip()]
 
 
-def plan_tasks(user_requirement, model=MODEL):
+def plan_tasks(user_requirement, model=MODEL, on_token=None,
+               on_reasoning_token=None, llm_client=None):
     prompt = f"""\
 Break this requirement into small, atomic tasks. For each, provide:
 task_id (T1, T2...), title, description, verify, depends_on (list of task_ids), owner (optional role/name).
@@ -357,14 +358,40 @@ Return ONLY a JSON array. No markdown.
 
 Requirement: {user_requirement}"""
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You decompose requirements into a durable task graph. Return valid JSON only."},
-            {"role": "user", "content": prompt},
-        ], temperature=0.2)
-
-    raw = (response.choices[0].message.content or "[]").strip()
+    messages = [
+        {"role": "system", "content": "You decompose requirements into a durable task graph. Return valid JSON only."},
+        {"role": "user", "content": prompt},
+    ]
+    active_client = llm_client or client
+    if on_token:
+        raw_parts = []
+        response = active_client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.2,
+            stream=True,
+            reasoning_effort="high",
+            extra_body={"thinking": {"type": "enabled"}},
+        )
+        for chunk in response:
+            if not getattr(chunk, "choices", None):
+                continue
+            delta = chunk.choices[0].delta
+            reasoning_text = getattr(delta, "reasoning_content", None) or ""
+            if reasoning_text and on_reasoning_token:
+                on_reasoning_token(reasoning_text)
+            text = getattr(delta, "content", None) or ""
+            if text:
+                on_token(text)
+                raw_parts.append(text)
+        raw = "".join(raw_parts).strip()
+    else:
+        response = active_client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.2,
+        )
+        raw = (response.choices[0].message.content or "[]").strip()
     if raw.startswith("```"):
         raw = "\n".join(raw.split("\n")[1:-1])
     try:

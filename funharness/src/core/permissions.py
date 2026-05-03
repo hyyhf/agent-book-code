@@ -5,6 +5,7 @@ Three-mode permission system, path/command policies, sandbox executor.
 """
 import os
 import platform
+import shlex
 import subprocess
 import time
 from enum import Enum
@@ -25,7 +26,7 @@ RISK_LEVELS = {
         "tool_read_progress", "tool_background_status", "tool_web_fetch",
         "tool_task_get", "tool_task_list", "tool_runtime_status",
         "tool_runtime_output", "tool_schedule_list", "tool_team_list",
-        "tool_team_inbox",
+        "tool_team_inbox", "tool_list_attachments", "tool_read_attachment",
     ],
     "write": [
         "tool_write_file", "tool_replace_in_file", "tool_save_memory",
@@ -190,7 +191,6 @@ class SandboxExecutor:
                 "shell": True,
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.PIPE,
-                "text": True,
                 "cwd": self.work_dir,
                 "env": self._build_safe_env(),
             }
@@ -208,7 +208,7 @@ class SandboxExecutor:
                     if deadline is not None and time.monotonic() >= deadline:
                         raise subprocess.TimeoutExpired(command, self.timeout)
                     try:
-                        stdout, stderr = proc.communicate(timeout=0.2)
+                        stdout_bytes, stderr_bytes = proc.communicate(timeout=0.2)
                         break
                     except subprocess.TimeoutExpired:
                         continue
@@ -217,14 +217,11 @@ class SandboxExecutor:
                 proc.wait(timeout=5)
                 return f"Error: command timed out ({self.timeout}s)"
 
-            parts = []
-            if stdout:
-                parts.append(stdout)
-            if stderr:
-                parts.append(f"[stderr]\n{stderr}")
-            output = "\n".join(parts) if parts else "(no output)"
-            if len(output) > self.max_output:
-                output = output[:self.max_output] + f"\n...(truncated, total {len(output)} chars)"
+            stdout = decode_process_output(stdout_bytes)
+            stderr = decode_process_output(stderr_bytes)
+            output = format_command_output(
+                command, self.work_dir, stdout, stderr, self.max_output
+            )
             return f"[exit={proc.returncode}]\n{output}"
         except Exception as e:
             return f"Execution failed: {e}"
@@ -247,6 +244,109 @@ class SandboxExecutor:
                 proc.kill()
             except Exception:
                 pass
+
+
+def decode_process_output(data: bytes | str | None) -> str:
+    """Decode subprocess output without losing UTF-8 output on GBK Windows shells."""
+    if not data:
+        return ""
+    if isinstance(data, str):
+        return data
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        encoding = "mbcs" if platform.system() == "Windows" else "utf-8"
+        try:
+            return data.decode(encoding, errors="replace")
+        except LookupError:
+            return data.decode("utf-8", errors="replace")
+
+
+def format_command_output(command: str, work_dir: str | Path,
+                          stdout: str | None, stderr: str | None,
+                          max_output: int) -> str:
+    """Format captured command output, including simple redirected stdout files."""
+    parts = []
+    if stdout:
+        parts.append(stdout)
+    if stderr:
+        parts.append(f"[stderr]\n{stderr}")
+
+    if not parts:
+        parts.extend(_redirected_output_previews(command, work_dir, max_output))
+
+    output = "\n".join(parts) if parts else "(no output)"
+    if len(output) > max_output:
+        output = output[:max_output] + f"\n...(truncated, total {len(output)} chars)"
+    return output
+
+
+def _redirected_output_previews(command: str, work_dir: str | Path,
+                                max_output: int) -> list[str]:
+    previews = []
+    for stream_name, path in _find_redirected_output_paths(command, work_dir):
+        if not path.is_file():
+            continue
+        try:
+            size = path.stat().st_size
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not text:
+            continue
+        if len(text) > max_output:
+            text = text[:max_output] + f"\n...(redirected output truncated, total {len(text)} chars)"
+        previews.append(
+            f"(no {stream_name} captured; shell redirected it to {path.name}, {size} bytes)\n{text}"
+        )
+    return previews
+
+
+def _find_redirected_output_paths(command: str, work_dir: str | Path) -> list[tuple[str, Path]]:
+    try:
+        tokens = shlex.split(command, posix=(platform.system() != "Windows"))
+    except ValueError:
+        tokens = command.split()
+
+    paths: list[tuple[str, Path]] = []
+    operators = {
+        ">": "stdout",
+        "1>": "stdout",
+        ">>": "stdout",
+        "1>>": "stdout",
+        "2>": "stderr",
+        "2>>": "stderr",
+    }
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token in operators and i + 1 < len(tokens):
+            _append_redirect_path(paths, operators[token], tokens[i + 1], work_dir)
+            i += 2
+            continue
+
+        matched = False
+        for op, stream_name in sorted(operators.items(), key=lambda item: -len(item[0])):
+            if token.startswith(op) and len(token) > len(op):
+                _append_redirect_path(paths, stream_name, token[len(op):], work_dir)
+                matched = True
+                break
+        i += 1
+
+    return paths
+
+
+def _append_redirect_path(paths: list[tuple[str, Path]], stream_name: str,
+                          raw_path: str, work_dir: str | Path) -> None:
+    if not raw_path or raw_path.startswith("&"):
+        return
+    cleaned = raw_path.strip().strip('"').strip("'")
+    if not cleaned:
+        return
+    path = Path(cleaned)
+    if not path.is_absolute():
+        path = Path(work_dir) / path
+    paths.append((stream_name, path))
 
 
 # ---- Approval Flow ----

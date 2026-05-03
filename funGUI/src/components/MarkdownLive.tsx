@@ -1,13 +1,17 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 
-export function MarkdownLive({ content }: { content: string }) {
+const remarkPlugins = [remarkGfm];
+const highlightPlugins = [rehypeHighlight];
+
+export const MarkdownLive = memo(function MarkdownLive({ content, streaming = false }: { content: string; streaming?: boolean }) {
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={highlightPlugins}>
         {content || ''}
       </ReactMarkdown>
     </div>
   );
-}
+});

@@ -1,11 +1,17 @@
 import { Button, Space, Tag, Tooltip } from '@arco-design/web-react';
-import { MenuFoldOne, MenuUnfoldOne, PauseOne, Save } from '@icon-park/react';
-import { api } from '../../api';
+import { MenuUnfoldOne, Save } from '@icon-park/react';
+import { memo } from 'react';
 import type { EventConnection } from '../../hooks/useAgentEvents';
 import type { AgentInfo } from '../../types';
 
+const eventConnectionLabels: Record<EventConnection, string> = {
+  connected: '已连接',
+  connecting: '连接中',
+  reconnecting: '重连中',
+  disconnected: '未连接',
+};
 
-export function Topbar({
+export const Topbar = memo(function Topbar({
   info,
   eventConnection,
   onSaveSession,
@@ -21,19 +27,19 @@ export function Topbar({
   return (
     <header className="topbar">
       <div className="topbar-title">
-        <strong>FunHarness GUI</strong>
-        <small>Local Agent Workbench</small>
+        <img src='./logo_fh.png' alt="logo" className="logo"/>
+        <div className="title-text">
+          <strong>FunHarness Studio</strong>
+          <small>你的专属AI智能体</small>
+        </div>
       </div>
       <Space className="topbar-actions" size={8}>
-        <Tooltip content="Backend event stream status">
-          <Tag className={`connection-tag connection-${eventConnection}`}>{eventConnection}</Tag>
+        <Tooltip content="后端事件流状态">
+          <Tag className={`connection-tag connection-${eventConnection}`}>{eventConnectionLabels[eventConnection]}</Tag>
         </Tooltip>
 
         <Button size="small" icon={<Save />} onClick={() => void onSaveSession()}>
-          Save
-        </Button>
-        <Button size="small" status="danger" icon={<PauseOne />} disabled={!info?.busy} onClick={() => void api.interrupt()}>
-          Stop
+          保存
         </Button>
         {workspaceCollapsed ? (
           <>
@@ -44,4 +50,4 @@ export function Topbar({
       </Space>
     </header>
   );
-}
+});

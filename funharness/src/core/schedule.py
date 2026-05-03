@@ -1,8 +1,8 @@
 """
 FunHarness - Scheduled Work
 
-Schedules remember future intent. When a schedule fires it emits a notification;
-the main agent loop decides what to do with that prompt.
+Schedules remember future intent. When a schedule fires it can start a runtime
+task through a callback, then emits a notification with the runtime id.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 
 @dataclass
@@ -28,6 +29,8 @@ class ScheduleRecord:
     next_fire_at: float = 0.0
     last_fired_at: float = 0.0
     last_fired_key: str = ""
+    last_runtime_id: str = ""
+    last_run_error: str = ""
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
@@ -45,14 +48,22 @@ class ScheduleRecord:
             next_fire_at=float(data.get("next_fire_at", 0.0)),
             last_fired_at=float(data.get("last_fired_at", 0.0)),
             last_fired_key=data.get("last_fired_key", ""),
+            last_runtime_id=data.get("last_runtime_id", ""),
+            last_run_error=data.get("last_run_error", ""),
         )
 
 
 class ScheduleManager:
-    def __init__(self, path: str | Path = ".funharness/schedules.json", check_interval: float = 5.0):
+    def __init__(
+        self,
+        path: str | Path = ".funharness/schedules.json",
+        check_interval: float = 5.0,
+        on_fire: Callable[[ScheduleRecord], str] | None = None,
+    ):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.check_interval = check_interval
+        self.on_fire = on_fire
         self._lock = threading.Lock()
         self._records: dict[str, ScheduleRecord] = {}
         self._notifications: list[dict] = []
@@ -116,11 +127,31 @@ class ScheduleManager:
         with self._lock:
             return sorted(self._records.values(), key=lambda r: r.created_at, reverse=True)
 
+    def get(self, schedule_id: str) -> ScheduleRecord | None:
+        with self._lock:
+            return self._records.get(schedule_id)
+
     def drain_notifications(self) -> list[dict]:
         with self._lock:
             items = list(self._notifications)
             self._notifications.clear()
             return items
+
+    def trigger(self, schedule_id: str, now: datetime | None = None) -> ScheduleRecord | None:
+        now = now or datetime.now()
+        now_ts = now.timestamp()
+        with self._lock:
+            record = self._records.get(schedule_id)
+            if record is None:
+                return None
+            record.last_fired_at = now_ts
+            record.last_fired_key = now.strftime("%Y%m%d%H%M")
+            record.last_run_error = ""
+            self._save()
+
+        runtime_id, error = self._start_runtime(record)
+        self._record_fire_result(record, runtime_id, error)
+        return record
 
     def check_due(self, now: datetime | None = None):
         now = now or datetime.now()
@@ -136,18 +167,40 @@ class ScheduleManager:
                         continue
                     record.last_fired_at = now_ts
                     record.last_fired_key = key
+                    record.last_run_error = ""
                     fired.append(record)
-                    self._notifications.append({
-                        "type": "scheduled_prompt",
-                        "schedule_id": record.schedule_id,
-                        "name": record.name,
-                        "prompt": record.prompt,
-                    })
                     if not record.recurring:
                         record.enabled = False
             if fired:
                 self._save()
+        for record in fired:
+            runtime_id, error = self._start_runtime(record)
+            self._record_fire_result(record, runtime_id, error)
         return fired
+
+    def _start_runtime(self, record: ScheduleRecord) -> tuple[str, str]:
+        if not self.on_fire:
+            return "", ""
+        try:
+            return self.on_fire(record) or "", ""
+        except Exception as exc:
+            return "", f"{type(exc).__name__}: {exc}"
+
+    def _record_fire_result(self, record: ScheduleRecord, runtime_id: str, error: str) -> None:
+        with self._lock:
+            current = self._records.get(record.schedule_id)
+            if current is not None:
+                current.last_runtime_id = runtime_id
+                current.last_run_error = error
+                self._save()
+            self._notifications.append({
+                "type": "scheduled_prompt",
+                "schedule_id": record.schedule_id,
+                "name": record.name,
+                "prompt": record.prompt,
+                "runtime_id": runtime_id,
+                "error": error,
+            })
 
     def _loop(self):
         while not self._stop.wait(self.check_interval):
@@ -160,9 +213,10 @@ class ScheduleManager:
         lines = ["Schedules:"]
         for record in records:
             state = "on" if record.enabled else "off"
+            runtime = f" (runtime: {record.last_runtime_id})" if record.last_runtime_id else ""
             lines.append(
                 f"  {record.schedule_id} [{state}] {record.when} -> "
-                f"{record.name}: {record.prompt[:80]}"
+                f"{record.name}: {record.prompt[:80]}{runtime}"
             )
         return "\n".join(lines)
 

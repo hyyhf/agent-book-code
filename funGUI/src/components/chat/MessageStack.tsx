@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import type { ApprovalState, ChatItem } from '../../types';
 import { MessageItem } from './MessageItem';
 
-export function MessageStack({
+export const MessageStack = memo(function MessageStack({
   items,
   resolveApproval,
 }: {
@@ -15,4 +16,4 @@ export function MessageStack({
       ))}
     </div>
   );
-}
+});

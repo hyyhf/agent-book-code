@@ -21,6 +21,24 @@ class ModeRequest(BaseModel):
     mode: str
 
 
+class ModelProfileRequest(BaseModel):
+    id: str = ""
+    name: str = ""
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+    enabled: bool = True
+
+
+class ModelProfilesSaveRequest(BaseModel):
+    profiles: list[ModelProfileRequest] = Field(default_factory=list)
+    default_profile_id: str = "__env__"
+
+
+class ModelProfileSelectRequest(BaseModel):
+    profile_id: str
+
+
 class PathRequest(BaseModel):
     path: str = "."
 

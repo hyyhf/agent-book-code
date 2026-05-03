@@ -31,15 +31,17 @@ client = OpenAI()
 MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 
-def call_with_retry(messages, tools, stream=False, max_retries=3):
+def call_with_retry(messages, tools, stream=False, max_retries=3, model=None, llm_client=None):
     """Call OpenAI API with exponential backoff retry.
 
     Enables DeepSeek thinking mode by default with reasoning_effort="high".
     """
+    active_client = llm_client or client
+    active_model = model or MODEL
     for attempt in range(max_retries):
         try:
-            return client.chat.completions.create(
-                model=MODEL,
+            return active_client.chat.completions.create(
+                model=active_model,
                 messages=messages,
                 tools=tools or None,
                 stream=stream,

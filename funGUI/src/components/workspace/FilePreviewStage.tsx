@@ -78,7 +78,6 @@ function CodePreview({ text, language, path }: { text: string; language: string;
 }
 
 export function FilePreviewStage({ preview, onClose }: { preview: FileReadResponse; onClose: () => void }) {
-  const [trustedHtml, setTrustedHtml] = useState(false);
   const rawUrl = `${API_BASE}/api/files/raw?path=${encodeURIComponent(preview.path)}`;
   const imageExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
   const officeExts = new Set(['.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls']);
@@ -116,17 +115,12 @@ export function FilePreviewStage({ preview, onClose }: { preview: FileReadRespon
         {isHtml ? (
           <div className="html-preview-wrap">
             <div className="html-preview-toolbar">
-              <span>{trustedHtml ? 'Trusted script preview' : 'Static HTML preview'}</span>
-              {!trustedHtml ? (
-                <Button size="mini" onClick={() => setTrustedHtml(true)}>
-                  Trust and run scripts
-                </Button>
-              ) : null}
+              <span>HTML preview</span>
             </div>
             <iframe
               className="html-preview"
               srcDoc={text}
-              sandbox={trustedHtml ? 'allow-scripts' : ''}
+              sandbox="allow-scripts"
               title={preview.path}
             />
           </div>
