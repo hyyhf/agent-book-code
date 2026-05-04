@@ -6,6 +6,8 @@ dist/
 wheels/
 *.egg-info
 defaultspace/
+funGUI/
+Schedule.md
 
 .codex/
 
