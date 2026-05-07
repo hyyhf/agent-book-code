@@ -12,29 +12,22 @@
 
 <br/>
 
-<h2>FunHarness：从终端机制到图形化教学工作台</h2>
-<sub><b>Textual TUI 讲清 Agent 如何工作 · FunHarness Studio 让学生打开就能上手</b></sub>
+<h2>FunHarness：从终端到图形化教学工作台</h2>
 
-<br/><br/>
-
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <a href="#命令参考">
-        <img src="assets/tui_play.gif" alt="FunHarness TUI Demo" width="96%" />
-      </a>
-      <br/>
-      <sub><b>Textual TUI</b><br/>适合讲解斜杠命令、工具调用流与 Agent Loop</sub>
-    </td>
-    <td width="50%" align="center">
-      <a href="docs/funharness_studio.zh.md">
-        <img src="assets/studio_play.gif" alt="FunHarness Studio Demo" width="96%" />
-      </a>
-      <br/>
-      <sub><b>FunHarness Studio</b><br/>为学生打造的本地化 Agent GUI，适合课堂演示与自学实验</sub>
-    </td>
-  </tr>
-</table>
+<div style="display:flex; gap:10px; align-items:flex-start; justify-content:center;">
+  <div style="width:50%; text-align:center;">
+    <a href="#命令参考">
+      <img src="assets/tui_play.gif" alt="FunHarness TUI Demo" width="100%" />
+    </a>
+    <sub><b>FunHarness TUI</b><br/>终端界面，命令行交互</sub>
+  </div>
+  <div style="width:50%; text-align:center;">
+    <a href="docs/funharness_studio.zh.md">
+      <img src="assets/studio_play.gif" alt="FunHarness Studio Demo" width="100%" />
+    </a>
+    <sub><b>FunHarness Studio</b><br/>为学生打造的本地化Agent GUI，打开就能上手</sub>
+  </div>
+</div>
 
 </div>
 
@@ -192,7 +185,8 @@ uv run chapter09/multi_agent.py
 </div>
 
 <div align="center">
-<img src="assets/funharness_logo.png" alt="FunHarness Logo" width="350" />
+<img src="assets/funharness_logo.png" alt="FunHarness Logo" width="350" /> <b>&</b> 
+<img src="assets/logo_fh.png" alt="FunHarness studio" width="80" />
 
 [![Version](https://img.shields.io/badge/FunHarness-v1.0-D4A017?style=for-the-badge&logoColor=white)](#) [![TUI](https://img.shields.io/badge/Interface-Textual%20TUI-14532d?style=for-the-badge&logo=gnometerminal&logoColor=white)](https://github.com/Textualize/textual) [![GUI](https://img.shields.io/badge/GUI-FunHarness%20Studio-8B5CF6?style=for-the-badge&logo=gnometerminal&logoColor=white)](#功能更新) [![Feishu](https://img.shields.io/badge/Channel-Feishu%20Bot-00B4AB?style=for-the-badge&logoColor=white)](./docs/feishu_channel.zh.md) [![Tools](https://img.shields.io/badge/Built--in%20Tools-30%2B-6366F1?style=for-the-badge)](#工具系统) [![Modes](https://img.shields.io/badge/Permission%20Modes-auto%20%7C%20suggest%20%7C%20approve-EF4444?style=for-the-badge)](#权限系统)
 
@@ -204,7 +198,7 @@ FunHarness 基于Claude Code核心思想，但不是把复杂系统直接搬给�
 
 更重要的是，FunHarness 是本书内容的**升华和进一步实战**。前面的章节讲原理、拆机制、写小例子；FunHarness 则把这些知识重新装配成一个可用产品。它既可以作为课程演示项目，也可以作为个人试验台，还可以作为读者打造自己类 **“Claw” AI Agent** 的起点。
 
-<img src="funGUI/public/logo_fh.png" alt="FunHarness Studio Logo" width="24" /> **[FunHarness Studio](docs/funharness_studio.zh.md)** 是 FunHarness 的本地化 GUI 形态：它不替代 TUI，而是与 TUI 共享同一个 Agent Core，把命令行里的工具调用、任务图、附件、会话、权限与可观测性做成更直观的可视化操作台。Studio 完全围绕学生群体设计，目标是“打开就会用、边用边理解 Agent 怎么工作”，因此特别适合课堂教学、实验课演示和课后自学：学生可以在界面中观察工具调用过程、回放历史会话、管理工作区文件、查看任务拆解与后台执行状态，也可以在不熟悉命令的情况下完成本地 Agent 实验。
+<img src="assets/logo_fh.png" alt="FunHarness Studio Logo" width="24" /> **[FunHarness Studio](docs/funharness_studio.zh.md)** 是 FunHarness 的本地化 GUI 形态：它不替代 TUI，而是与 TUI 共享同一个 Agent Core，把命令行里的工具调用、任务图、附件、会话、权限与可观测性做成更直观的可视化操作台。Studio 完全围绕学生群体设计，目标是“打开就会用、边用边理解 Agent 怎么工作”，因此特别适合课堂教学、实验课演示和课后自学：学生可以在界面中观察工具调用过程、回放历史会话、管理工作区文件、查看任务拆解与后台执行状态，也可以在不熟悉命令的情况下完成本地 Agent 实验。
 
 > [!tip]
 > **FunHarness = 一个你自己能读懂、改得动的 Claude Code**
@@ -396,7 +390,9 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 **TUI 主界面**
 
-<img src="assets/Funharness_UI.png" alt="FunHarness TUI Main" width="780" />
+<img src="assets/Funharness_UI.png" alt="FunHarness TUI Main" width="680" />
+
+<img src="docs/images/studio_mainpage.png" alt="FunHarness GUI" width="680" />
 
 </div>
 
@@ -408,7 +404,7 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 | :----------------------------------------------------------------: | :----------------------------------------------------------------: |
 |    <img src="assets/funharness_runtime_page_1.png" width="450" />   |    <img src="assets/funharness_runtime_page_2.png" width="450" />   |
 |                        Studio 主界面                        |                      Studio Agent Teams                       |
-|   <img src="docs/images/studio_mainpage.png" width="450" />   |   <img src="docs/images/studio_agent_teams.png" width="450" /> |
+|   <img src="docs/images/studio_runtime.png" width="450" />   |   <img src="docs/images/studio_agent_teams.png" width="450" /> |
 
 </div>
 
