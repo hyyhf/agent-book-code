@@ -6,6 +6,7 @@ Supports DeepSeek thinking mode with reasoning_content passthrough.
 """
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,6 +32,53 @@ client = OpenAI()
 MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 
+def _to_jsonable(value):
+    """Convert OpenAI SDK objects into JSON-serializable plain data."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, list):
+        return [_to_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_to_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable(v) for k, v in value.items()}
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return _to_jsonable(model_dump(exclude_none=True))
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return _to_jsonable(to_dict())
+    return str(value)
+
+
+def sanitize_messages_for_api(messages):
+    """Strip session-only metadata before sending chat messages to a model."""
+    sanitized = []
+    for message in messages:
+        role = message.get("role")
+        if not role:
+            continue
+
+        clean = {"role": role}
+        if "content" in message:
+            clean["content"] = message.get("content")
+
+        if role == "assistant":
+            if "reasoning_content" in message:
+                clean["reasoning_content"] = message.get("reasoning_content")
+            if "tool_calls" in message:
+                clean["tool_calls"] = message.get("tool_calls")
+        elif role == "tool":
+            if "tool_call_id" in message:
+                clean["tool_call_id"] = message.get("tool_call_id")
+        elif role == "function":
+            if "name" in message:
+                clean["name"] = message.get("name")
+
+        sanitized.append(clean)
+    return sanitized
+
+
 def call_with_retry(messages, tools, stream=False, max_retries=3, model=None, llm_client=None):
     """Call OpenAI API with exponential backoff retry.
 
@@ -38,16 +86,20 @@ def call_with_retry(messages, tools, stream=False, max_retries=3, model=None, ll
     """
     active_client = llm_client or client
     active_model = model or MODEL
+    request = {
+        "model": active_model,
+        "messages": sanitize_messages_for_api(messages),
+        "tools": tools or None,
+        "stream": stream,
+        "reasoning_effort": "high",
+        "extra_body": {"thinking": {"type": "enabled"}},
+    }
+    if stream:
+        request["stream_options"] = {"include_usage": True}
+
     for attempt in range(max_retries):
         try:
-            return active_client.chat.completions.create(
-                model=active_model,
-                messages=messages,
-                tools=tools or None,
-                stream=stream,
-                reasoning_effort="high",
-                extra_body={"thinking": {"type": "enabled"}},
-            )
+            return active_client.chat.completions.create(**request)
         except (RateLimitError, APITimeoutError, APIConnectionError) as e:
             if attempt == max_retries - 1:
                 raise
@@ -73,6 +125,7 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
     content_parts = []
     reasoning_parts = []
     tool_calls_data = {}
+    response_metadata = {}
 
     for chunk in stream:
         if should_interrupt and should_interrupt():
@@ -81,10 +134,35 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
                 close()
             raise InterruptedError("Agent run interrupted")
 
-        if hasattr(chunk, "usage") and chunk.usage and cost_tracker:
-            cost_tracker.update(chunk.usage)
+        for attr in ("id", "object", "created", "model", "system_fingerprint"):
+            value = getattr(chunk, attr, None)
+            if value is not None and attr not in response_metadata:
+                response_metadata[attr] = value
 
-        delta = chunk.choices[0].delta
+        usage = getattr(chunk, "usage", None)
+        if usage:
+            response_metadata["usage"] = _to_jsonable(usage)
+            if cost_tracker:
+                cost_tracker.update(usage)
+
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+
+        choice = choices[0]
+        choice_index = getattr(choice, "index", None)
+        if choice_index is not None:
+            response_metadata["choice_index"] = choice_index
+        finish_reason = getattr(choice, "finish_reason", None)
+        if finish_reason is not None:
+            response_metadata["finish_reason"] = finish_reason
+        logprobs = getattr(choice, "logprobs", None)
+        if logprobs is not None:
+            response_metadata["logprobs"] = _to_jsonable(logprobs)
+
+        delta = getattr(choice, "delta", None)
+        if delta is None:
+            continue
 
         # Capture reasoning_content (thinking chain) from delta
         reasoning_text = getattr(delta, "reasoning_content", None)
@@ -93,13 +171,15 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
                 on_reasoning_token(reasoning_text)
             reasoning_parts.append(reasoning_text)
 
-        if delta.content:
+        content_text = getattr(delta, "content", None)
+        if content_text:
             if on_token:
-                on_token(delta.content)
-            content_parts.append(delta.content)
+                on_token(content_text)
+            content_parts.append(content_text)
 
-        if delta.tool_calls:
-            for tc in delta.tool_calls:
+        tool_calls = getattr(delta, "tool_calls", None)
+        if tool_calls:
+            for tc in tool_calls:
                 idx = tc.index
                 if idx not in tool_calls_data:
                     tool_calls_data[idx] = {"id": "", "name": "", "arguments": ""}
@@ -138,5 +218,9 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
                 "function": {"name": d["name"], "arguments": d["arguments"]},
             })
         msg["tool_calls"] = tc_list
+
+    if response_metadata:
+        response_metadata["received_at"] = datetime.now().astimezone().isoformat()
+        msg["response_metadata"] = response_metadata
 
     return msg

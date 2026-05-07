@@ -9,9 +9,10 @@ import json
 import os
 import re
 import subprocess
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import get_type_hints
+from typing import Any, get_type_hints
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
@@ -121,6 +122,17 @@ class ToolRegistry:
 # ----------------------------------------------------------------
 
 registry = ToolRegistry()
+
+
+@dataclass
+class ToolResult:
+    """Tool return value with optional UI-only display metadata."""
+
+    content: str
+    display: dict[str, Any] | None = None
+
+    def __str__(self) -> str:
+        return self.content
 
 
 # --- File Tools ---
@@ -349,7 +361,7 @@ def tool_web_fetch(url: str) -> str:
                 text = _html_to_text(text)
 
             text = text.strip()
-            max_chars = 12000
+            max_chars = 30000
             if len(text) > max_chars:
                 text = text[:max_chars].rstrip() + "\n...[truncated]"
 
@@ -367,7 +379,7 @@ def tool_web_fetch(url: str) -> str:
 
 
 @registry.tool(category="web")
-def tool_web_search(query: str) -> str:
+def tool_web_search(query: str) -> ToolResult | str:
     """Search the web using Tavily API and return results. Use for finding information online.
 
     Args:
@@ -412,9 +424,32 @@ def tool_web_search(query: str) -> str:
             lines.append(f"{i}. [{title}]({url})")
             lines.append(f"   {snippet}")
 
-        return "\n".join(lines) if lines else "No results found"
+        content = "\n".join(lines) if lines else "No results found"
+        return ToolResult(content=content, display=_web_search_display(data, query))
     except Exception as e:
         return f"Web search failed: {e}"
+
+
+def _web_search_display(data: dict[str, Any], fallback_query: str) -> dict[str, Any]:
+    """Normalize Tavily data for GUI display without leaking raw provider fields."""
+    normalized_results = []
+    for item in data.get("results", []):
+        if not isinstance(item, dict):
+            continue
+        normalized_results.append({
+            "title": item.get("title") if isinstance(item.get("title"), str) else "",
+            "url": item.get("url") if isinstance(item.get("url"), str) else "",
+            "content": item.get("content") if isinstance(item.get("content"), str) else "",
+            "score": item.get("score") if isinstance(item.get("score"), (int, float)) else None,
+        })
+
+    query = data.get("query")
+    return {
+        "kind": "web_search",
+        "query": query if isinstance(query, str) and query else fallback_query,
+        "images": [],
+        "results": normalized_results,
+    }
 
 
 # --- HTML-to-Text Extraction ---

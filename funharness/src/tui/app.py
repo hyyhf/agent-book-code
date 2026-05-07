@@ -924,7 +924,7 @@ class FunHarnessApp(App):
     def _on_tool_call_sync(self, name: str, preview: str, risk: str):
         self._safe_callback(self._show_tool_call, name, preview, risk)
 
-    def _on_tool_result_sync(self, name: str, result: str, hook_feedback: str):
+    def _on_tool_result_sync(self, name: str, result: str, hook_feedback: str, display=None):
         self._safe_callback(self._show_tool_result, name, result, hook_feedback)
 
     def _on_plan_token_sync(self, token: str):

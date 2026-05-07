@@ -14,28 +14,68 @@ _SKILLS_DIR = ".funharness/skills"
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     """Parse YAML frontmatter from a markdown file.
 
-    Handles simple 'key: value' pairs delimited by '---'.
+    Handles simple YAML frontmatter delimited by '---', including folded
+    metadata values that continue on indented lines.
     No external YAML dependency required.
     """
-    if not text.startswith("---"):
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
         return {}, text
 
-    parts = text.split("---", 2)
-    if len(parts) < 3:
+    closing_index = None
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            closing_index = index
+            break
+
+    if closing_index is None:
         return {}, text
 
     meta = {}
-    for line in parts[1].strip().split("\n"):
-        line = line.strip()
-        if ":" in line:
-            key, val = line.split(":", 1)
-            key = key.strip()
-            val = val.strip()
-            if val.startswith("[") and val.endswith("]"):
-                val = [v.strip() for v in val[1:-1].split(",") if v.strip()]
-            meta[key] = val
+    current_key = None
+    current_value: list[str] = []
+    block_style = None
 
-    body = parts[2].strip()
+    def commit_current():
+        nonlocal current_key, current_value, block_style
+        if current_key is None:
+            return
+        if block_style == "|":
+            value = "\n".join(current_value).strip()
+        else:
+            value = " ".join(part.strip() for part in current_value).strip()
+        if value.startswith("[") and value.endswith("]"):
+            value = [v.strip() for v in value[1:-1].split(",") if v.strip()]
+        meta[current_key] = value
+        current_key = None
+        current_value = []
+        block_style = None
+
+    for raw_line in lines[1:closing_index]:
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            if current_key is not None and block_style in {">", "|"}:
+                current_value.append("")
+            continue
+
+        is_continuation = raw_line[:1].isspace()
+        if not is_continuation and ":" in raw_line:
+            commit_current()
+            key, val = raw_line.split(":", 1)
+            current_key = key.strip()
+            value = val.strip()
+            if value in {">", "|"}:
+                block_style = value
+                current_value = []
+            else:
+                current_value = [value]
+            continue
+
+        if current_key is not None:
+            current_value.append(raw_line.strip())
+
+    commit_current()
+
+    body = "\n".join(lines[closing_index + 1:]).strip()
     return meta, body
 
 

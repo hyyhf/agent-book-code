@@ -266,7 +266,7 @@ class FeishuAgentSession:
             f"[tool] {name} ({risk})\nargs: {preview}",
         )
 
-    def _on_tool_result(self, name: str, result: str, hook_feedback: str) -> None:
+    def _on_tool_result(self, name: str, result: str, hook_feedback: str, display=None) -> None:
         text = result if len(result) <= 500 else result[:500] + "...(truncated)"
         if hook_feedback:
             text += f"\n[hook] {hook_feedback}"

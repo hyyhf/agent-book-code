@@ -3,6 +3,7 @@ FunHarness - Agent Engine
 
 Core agent loop as a class with callback-based integration for TUI.
 """
+import inspect
 import json
 import platform
 import shlex
@@ -11,7 +12,7 @@ import time
 from contextvars import ContextVar
 from pathlib import Path
 
-from .core.tools import registry
+from .core.tools import ToolResult, registry
 from .core.attachments import AttachmentManager, DEFAULT_ATTACHMENT_MAX_CHARS
 from .core.llm import call_with_retry, process_stream_response, MODEL, client
 from .core.system_prompt import build_system_prompt, build_environment_block, build_tools_guide
@@ -442,7 +443,7 @@ class FunHarnessAgent:
         on_reasoning_start(): Called when reasoning output begins
         on_tool_gen(index, name, chunk): Called for each tool argument token
         on_tool_call(name, args_preview, risk): Called when a tool is invoked
-        on_tool_result(name, result, hook_feedback): Called with tool result
+        on_tool_result(name, result, hook_feedback, display): Called with tool result
         on_plan_token(str): Called while slash /plan is generating tasks
         on_status(str): Called with status messages
         on_approval(tool_name, arguments, reason) -> (bool, str): Called for approval
@@ -1159,11 +1160,10 @@ class FunHarnessAgent:
                 if self.on_tool_call:
                     self.on_tool_call(name, preview, risk)
 
-                result, hook_feedback = self._execute_tool(name, args_str)
+                result, hook_feedback, display = self._execute_tool(name, args_str)
                 self._raise_if_interrupted()
 
-                if self.on_tool_result:
-                    self.on_tool_result(name, result, hook_feedback)
+                self._emit_tool_result(name, result, hook_feedback, display)
 
                 try:
                     parsed_args = json.loads(args_str)
@@ -1196,42 +1196,62 @@ class FunHarnessAgent:
 
         self.current_session.messages = self.messages
 
+    def _emit_tool_result(self, name, result, hook_feedback, display):
+        if not self.on_tool_result:
+            return
+        try:
+            parameters = inspect.signature(self.on_tool_result).parameters.values()
+        except (TypeError, ValueError):
+            self.on_tool_result(name, result, hook_feedback, display)
+            return
+
+        accepts_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in parameters)
+        positional_count = sum(
+            1 for p in parameters
+            if p.kind in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+        )
+        if accepts_varargs or positional_count >= 4:
+            self.on_tool_result(name, result, hook_feedback, display)
+        else:
+            self.on_tool_result(name, result, hook_feedback)
+
     def _execute_tool(self, tool_name, arguments_json):
         """Execute a tool with hooks and permission checks."""
         try:
             args = json.loads(arguments_json)
         except json.JSONDecodeError as e:
-            return f"Argument parse error: {e}", ""
+            return f"Argument parse error: {e}", "", None
 
         self._raise_if_interrupted()
 
         func = registry.get_function(tool_name)
         if not func:
-            return f"Unknown tool: {tool_name}", ""
+            return f"Unknown tool: {tool_name}", "", None
 
         schema = registry.get_schema(tool_name)
         if schema:
             required = schema["function"]["parameters"].get("required", [])
             missing = [p for p in required if p not in args]
             if missing:
-                return f"Missing required parameters: {', '.join(missing)}", ""
+                return f"Missing required parameters: {', '.join(missing)}", "", None
 
         # PreToolUse hook
         pre_result = self.hook_registry.dispatch_pre_tool(tool_name, args)
         if pre_result.action == HookAction.DENY:
-            return f"[HOOK DENIED] {pre_result.feedback}", ""
+            return f"[HOOK DENIED] {pre_result.feedback}", "", None
         if pre_result.modified_args:
             args = pre_result.modified_args
 
         # Permission check
         allowed, reason = self.approval_flow.pre_tool_check(tool_name, args)
         if not allowed:
-            return f"[DENIED] {reason}", ""
+            return f"[DENIED] {reason}", "", None
 
         # Execute
         tool_start = time.time()
         tool_span = self.tracer.start_span(SpanKind.TOOL_CALL, tool_name)
 
+        display = None
         if tool_name == "tool_run_command":
             result = self.approval_flow.sandbox.execute(
                 args.get("command", ""),
@@ -1242,7 +1262,12 @@ class FunHarnessAgent:
                 self._raise_if_interrupted()
                 token = _current_agent.set(self)
                 try:
-                    result = str(func(**args))
+                    raw_result = func(**args)
+                    if isinstance(raw_result, ToolResult):
+                        result = raw_result.content
+                        display = raw_result.display
+                    else:
+                        result = str(raw_result)
                 finally:
                     _current_agent.reset(token)
                 self._raise_if_interrupted()
@@ -1262,4 +1287,4 @@ class FunHarnessAgent:
         if pre_result.feedback:
             hook_feedback = (pre_result.feedback + "\n" + hook_feedback) if hook_feedback else pre_result.feedback
 
-        return result, hook_feedback
+        return result, hook_feedback, display

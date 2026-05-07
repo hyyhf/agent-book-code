@@ -10,6 +10,32 @@
 
 *从第一个 LLM API 调用开始，一层一层搭出真正能工作的 AI 智能体*
 
+<br/>
+
+<h2>FunHarness：从终端机制到图形化教学工作台</h2>
+<sub><b>Textual TUI 讲清 Agent 如何工作 · FunHarness Studio 让学生打开就能上手</b></sub>
+
+<br/><br/>
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="#命令参考">
+        <img src="assets/tui_play.gif" alt="FunHarness TUI Demo" width="96%" />
+      </a>
+      <br/>
+      <sub><b>Textual TUI</b><br/>适合讲解斜杠命令、工具调用流与 Agent Loop</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/funharness_studio.zh.md">
+        <img src="assets/studio_play.gif" alt="FunHarness Studio Demo" width="96%" />
+      </a>
+      <br/>
+      <sub><b>FunHarness Studio</b><br/>为学生打造的本地化 Agent GUI，适合课堂演示与自学实验</sub>
+    </td>
+  </tr>
+</table>
+
 </div>
 
 ---
@@ -168,21 +194,24 @@ uv run chapter09/multi_agent.py
 <div align="center">
 <img src="assets/funharness_logo.png" alt="FunHarness Logo" width="350" />
 
-[![Version](https://img.shields.io/badge/FunHarness-v1.0-D4A017?style=for-the-badge&logoColor=white)](#) [![TUI](https://img.shields.io/badge/Interface-Textual%20TUI-14532d?style=for-the-badge&logo=gnometerminal&logoColor=white)](https://github.com/Textualize/textual) [![Feishu](https://img.shields.io/badge/Channel-Feishu%20Bot-00B4AB?style=for-the-badge&logoColor=white)](./docs/feishu_channel.zh.md) [![Tools](https://img.shields.io/badge/Built--in%20Tools-30%2B-6366F1?style=for-the-badge)](#工具系统) [![Modes](https://img.shields.io/badge/Permission%20Modes-auto%20%7C%20suggest%20%7C%20approve-EF4444?style=for-the-badge)](#权限系统)
+[![Version](https://img.shields.io/badge/FunHarness-v1.0-D4A017?style=for-the-badge&logoColor=white)](#) [![TUI](https://img.shields.io/badge/Interface-Textual%20TUI-14532d?style=for-the-badge&logo=gnometerminal&logoColor=white)](https://github.com/Textualize/textual) [![GUI](https://img.shields.io/badge/GUI-FunHarness%20Studio-8B5CF6?style=for-the-badge&logo=gnometerminal&logoColor=white)](#功能更新) [![Feishu](https://img.shields.io/badge/Channel-Feishu%20Bot-00B4AB?style=for-the-badge&logoColor=white)](./docs/feishu_channel.zh.md) [![Tools](https://img.shields.io/badge/Built--in%20Tools-30%2B-6366F1?style=for-the-badge)](#工具系统) [![Modes](https://img.shields.io/badge/Permission%20Modes-auto%20%7C%20suggest%20%7C%20approve-EF4444?style=for-the-badge)](#权限系统)
 
 </div>
 
 FunHarness 是本书的**核心实战项目**，也是贯穿全书的主线。它是一个用于教学、试验和二次改造的 **minimal AI Agent 产品**：足够小，小到读者可以读完关键代码；足够完整，完整到它真的能在本地运行、调用工具、管理上下文、保存记忆、追踪任务，并通过 TUI 或机器人通道与用户交互。
 
-它对标的是 Claude Code、OpenHarness 这一类 AI 编程助手的核心思想，但不是把复杂系统直接搬给读者。FunHarness 把一个 AI Agent 产品拆成可学习的工程组件：Agent Loop 负责推理与推进，ToolRegistry 负责能力边界，Context 管理负责长对话，Permission 负责安全约束，Hooks/Middleware 负责扩展，可观测性负责调试和复盘。读者能清楚看到一个“会做事”的 Agent 是怎样从几十行代码长出来的。
+FunHarness 基于Claude Code核心思想，但不是把复杂系统直接搬给读者，而是把一个 AI Agent 产品拆成可学习的工程组件：Agent Loop 负责推理与推进，Tool 负责能力边界，Context 管理负责长对话，Permission 负责安全约束，Hooks/Middleware 负责扩展，可观测性负责调试和复盘。读者能清楚看到一个会做事的 Agent 是怎样从几十行代码长出来的。
 
 更重要的是，FunHarness 是本书内容的**升华和进一步实战**。前面的章节讲原理、拆机制、写小例子；FunHarness 则把这些知识重新装配成一个可用产品。它既可以作为课程演示项目，也可以作为个人试验台，还可以作为读者打造自己类 **“Claw” AI Agent** 的起点。
+
+<img src="funGUI/public/logo_fh.png" alt="FunHarness Studio Logo" width="24" /> **[FunHarness Studio](docs/funharness_studio.zh.md)** 是 FunHarness 的本地化 GUI 形态：它不替代 TUI，而是与 TUI 共享同一个 Agent Core，把命令行里的工具调用、任务图、附件、会话、权限与可观测性做成更直观的可视化操作台。Studio 完全围绕学生群体设计，目标是“打开就会用、边用边理解 Agent 怎么工作”，因此特别适合课堂教学、实验课演示和课后自学：学生可以在界面中观察工具调用过程、回放历史会话、管理工作区文件、查看任务拆解与后台执行状态，也可以在不熟悉命令的情况下完成本地 Agent 实验。
 
 > [!tip]
 > **FunHarness = 一个你自己能读懂、改得动的 Claude Code**
 > - 一个面向学习和实验的 mini Claude Code / OpenClaw 风格 AI Agent。
 > - 它不追求功能最全，而是追求每一行代码都能讲清楚、每一个能力都能被复刻。这正是“从零构建”的意义。
-> - 它有 TUI，有工具调用，有权限，有上下文压缩，有记忆，有任务系统，有可观测性，还有飞书机器人通道。更重要的是，这些能力不是黑盒塞给你的，而是沿着本书章节逐步演化出来的。读者可以跟着书一起从 `funharness_v01.py` 写到完整的 `funharness/`，最终打造出属于自己的类 “Claw” AI Agent。
+> - 它有 TUI，也有面向学生的 FunHarness Studio 本地 GUI：TUI 适合理解命令和底层交互，Studio 适合课堂展示、可视化观察和零门槛上手。
+> - 它有工具调用，有权限，有上下文压缩，有记忆，有任务系统，有可观测性，还有飞书机器人通道。更重要的是，这些能力不是黑盒塞给你的，而是沿着本书章节逐步演化出来的。读者可以跟着书一起从 `funharness_v01.py` 写到完整的 `funharness/`，最终打造出属于自己的类 “Claw” AI Agent。
 
 ### 为什么说它适合教学和试验
 
@@ -224,8 +253,13 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
+> - **2026-05-05 —— FunHarness Studio GUI 已上线：**
+>   - 提供 Electron + FastAPI 本地桌面 GUI，支持会话、工作区、附件、模型配置、Agent 面板与可观测性面板。
+> - **2026-05-06 —— TUI 能力补齐与修复：**
+>   - TUI 新增附件管理、慢命令后台执行、Skills/附件专用展示；修复工具结果回调、流式元数据、Skills frontmatter 与 Web Search 展示等问题。
 > - **2026-04-29 —— 补充Agent Teams：**
 >   - 本次更新补齐了 `FunHarness` 的 **Agent Teams / SubAgent、持久任务系统、后台运行时与定时调度** 能力，让它从单一对话助手升级为可以分工、排期、后台执行的 mini Agent 工作台。
+
 
 | 更新方向         | 新增能力                                                                                     | 常用入口                                            |
 | ---------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------- |
@@ -235,6 +269,8 @@ funharness/   完整生产版本（TUI + 飞书通道）
 | **后台运行时**   | 慢命令可以进入后台槽位运行，完整输出保存到 `.funharness/runtime/`，完成后通过事件回到主循环  | `/bg run`、`/bg output`、`tool_runtime_*`           |
 | **定时调度**     | 支持未来时间、`in 10m` 和简化 cron，将 prompt 安排到指定时间触发                             | `/schedule create`、`/schedule`、`tool_schedule_*`  |
 | **TUI 状态展示** | 底部状态栏同步展示 Team、后台任务、调度数量；并修复并行同名工具调用的预览串线问题            | TUI 状态栏、工具流式预览                            |
+| **TUI 附件管理** | 支持会话附件上传、解析、查看与移除，PDF / DOCX / XLSX / CSV 等常见文档可进入上下文          | `/attach`、`/attachments`、`/detach`                |
+| **Studio GUI**   | 本地桌面 GUI 已上线，复用同一个 Agent Core，提供工作区、历史、设置、附件和面板化操作       | `funGUI/`、`npm run dev`                            |
 | **安全与稳定性** | 修复工作区路径逃逸、POSIX 进程组超时清理、跨会话任务状态串扰、JSON 预览失效等问题            | 权限系统、Sandbox、TUI                              |
 
 新增功能保持 mini 项目的实现风格：核心状态都落在 `.funharness/` 下，命令行、TUI 与工具调用共享同一套能力，方便学习、调试和继续裁剪扩展。
@@ -250,6 +286,7 @@ funharness/   完整生产版本（TUI + 飞书通道）
 | **内置工具 (30+)**        | 文件读/写/替换、Shell 命令、目录列表、正则搜索、网页抓取、网页搜索、记忆读写、任务管理、后台运行、定时调度、多 Agent 协作 |
 | **上下文管理**            | Token 估算、自动 compact、工具结果截断，防止 context 爆炸                                                                 |
 | **持久记忆**              | `.funharness/MEMORY.md` 跨会话记忆，支持关键词搜索与追加                                                                  |
+| **会话附件**              | `/attach` 将文档复制到 `.funharness/uploads/`，解析后随当前会话进入上下文，支持查看与移除                                 |
 | **技能系统**              | `skills/<name>/SKILL.md` 自动发现，注入系统提示，`/skills` 查看                                                           |
 | **会话管理**              | 自动保存/恢复对话，`.funharness/sessions/` 存储历史                                                                       |
 | **权限系统**              | `auto` / `suggest` / `approve` 三档，读写操作分类，`Shift+Tab` 实时切换                                                   |
@@ -260,7 +297,8 @@ funharness/   完整生产版本（TUI + 飞书通道）
 | **SubAgent / Agent Team** | `tool_subagent_run` 适合一次性隔离分析；`tool_team_create` / `/delegate` 支持长期队友、inbox 和异步委派                   |
 | **Hooks / Middleware**    | Pre/Post Tool 钩子、中间件链，无侵入地扩展 agent 行为                                                                     |
 | **可观测性**              | 结构化日志、Span 追踪、成本看板、失败模式分析、一键导出                                                                   |
-| **TUI 界面**              | 基于 Textual 的终端 UI，流式渲染、Markdown 展示、工具块边框                                                               |
+| **TUI 界面**              | 基于 Textual 的终端 UI，流式渲染、Markdown 展示、工具块边框、附件/Skills 专用展示                                         |
+| **FunHarness Studio GUI** | Electron + Vite + FastAPI 本地桌面 GUI，复用同一套 Agent Core                                                            |
 | **飞书机器人**            | 长连接模式，无需公网地址，私聊/群聊均可触发                                                                               |
 
 
@@ -278,6 +316,7 @@ funharness/
     │   ├── llm.py           # LLM 调用、流式处理、重试
     │   ├── context.py       # Token 估算、compact、截断
     │   ├── memory.py        # 持久记忆读写
+    │   ├── attachments.py   # 会话附件复制、解析与索引
     │   ├── skills.py        # Skill 自动发现与摘要
     │   ├── session.py       # 会话序列化与管理
     │   ├── permissions.py   # 三模式权限 + 审批流 + Sandbox
@@ -295,9 +334,19 @@ funharness/
     └── channels/
         └── feishu.py        # 飞书长连接机器人通道
 
+funGUI/                       # FunHarness Studio 本地桌面 GUI
+├── backend/                  # FastAPI 服务，连接 FunHarnessAgent
+├── electron/                 # Electron 主进程与 preload
+├── src/                      # Vite + React 前端
+│   ├── components/           # Chat、Workspace、Panels、Composer 等界面组件
+│   ├── hooks/                # SSE 事件、Agent 操作封装
+│   └── lib/                  # 事件适配、会话回放等前端工具
+└── public/                   # Logo 与机器人素材
+
 defaultspace/                # Agent 默认工作区（fh 启动后 chdir 至此）
 └── .funharness/
     ├── MEMORY.md            # 持久记忆文件
+    ├── uploads/             # 会话附件副本与 attachments.json
     ├── tasks.json           # 持久任务图
     ├── runtime/             # 后台运行时任务状态与完整输出
     ├── schedules.json       # 定时调度记录
@@ -355,19 +404,24 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 <div align="center">
 
-|                          工具调用过程                          |                          任务执行状态                          |
-| :------------------------------------------------------------: | :------------------------------------------------------------: |
-| <img src="assets/funharness_runtime_page_1.png" width="450" /> | <img src="assets/funharness_runtime_page_2.png" width="450" /> |
+|                          TUI 工具调用过程                          |                          TUI 任务执行状态                          |
+| :----------------------------------------------------------------: | :----------------------------------------------------------------: |
+|    <img src="assets/funharness_runtime_page_1.png" width="450" />   |    <img src="assets/funharness_runtime_page_2.png" width="450" />   |
+|                        Studio 主界面                        |                      Studio Agent Teams                       |
+|   <img src="docs/images/studio_mainpage.png" width="450" />   |   <img src="docs/images/studio_agent_teams.png" width="450" /> |
 
 </div>
 
 ---
 
-### 斜杠命令参考
+### 命令参考
 
-在 TUI 输入框中输入以下命令可控制 agent 行为：
+在 TUI 输入框中可以输入斜杠命令，也可以使用快捷指令控制当前会话。
 
-| 命令                                                        | 说明                                             |
+<details>
+<summary>展开斜杠命令参考</summary>
+
+| 斜杠命令                                                    | 说明                                             |
 | ----------------------------------------------------------- | ------------------------------------------------ |
 | `/help`                                                     | 显示所有可用命令                                 |
 | `/new`                                                      | 开始新会话（自动保存当前会话）                   |
@@ -375,6 +429,9 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 | `/context`                                                  | 显示上下文窗口状态（tokens / 消息数）            |
 | `/save`                                                     | 手动保存当前会话                                 |
 | `/memory`                                                   | 查看持久记忆内容                                 |
+| `/attach <path1> [path2 ...]`                               | 添加一个或多个会话附件                           |
+| `/attachments`                                              | 查看当前会话附件与预览                           |
+| `/detach <id\|all>`                                         | 移除附件引用                                     |
 | `/mode [auto\|suggest\|approve]`                            | 查看或切换权限模式                               |
 | `/perms`                                                    | 查看路径权限配置                                 |
 | `/skills`                                                   | 列出已发现的 Skills 及摘要                       |
@@ -391,12 +448,15 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 | `/team`                                                     | 查看当前 Agent Team 名册                         |
 | `/team create <name> <role> [instructions]`                 | 创建或更新一个长期队友                           |
 | `/team inbox <name>`                                        | 查看队友 inbox                                   |
+| `/team send <name> <message>`                               | 给队友 inbox 发送消息                            |
 | `/delegate <name> <任务描述>`                               | 将工作异步委派给某个队友                         |
 | `/bg`                                                       | 查看后台 runtime task 状态                       |
 | `/bg run <command>`                                         | 在后台运行慢命令，主循环可继续工作               |
+| `/bg status <runtime_id>`                                   | 查看后台任务 JSON 状态                           |
 | `/bg output <runtime_id>`                                   | 查看后台任务完整输出                             |
 | `/schedule`                                                 | 查看定时调度列表                                 |
 | `/schedule create <name> <when> <prompt>`                   | 创建定时 prompt，例如 `in 10m` 或 `*/5 * * * *`  |
+| `/schedule run <job_id>`                                    | 立即触发一次调度任务                             |
 | `/schedule delete <job_id>`                                 | 删除调度记录                                     |
 | `/events`                                                   | 手动拉取 runtime / schedule 事件                 |
 | `/trace`                                                    | 显示 Span 追踪时间线与汇总                       |
@@ -404,9 +464,17 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 | `/dashboard`                                                | 显示成本与 Token 看板                            |
 | `/failures`                                                 | 分析失败模式（循环/错误/重复调用）               |
 | `/export`                                                   | 导出追踪、日志和成本数据到 `.funharness/traces/` |
-| `clear` or `Ctrl+L`                                         | 清空对话（保存当前会话后重置）                   |
-| `Ctrl+Z`                                                    | 中断当前会话                                     |
-| `quit` or `Ctrl+C`                                          | 退出 FunHarness                                  |
+
+</details>
+
+#### 快捷指令
+
+| 快捷指令            | 说明                           |
+| ------------------- | ------------------------------ |
+| `Shift+Tab`         | 循环切换权限模式               |
+| `clear` 或 `Ctrl+L` | 清空对话（保存当前会话后重置） |
+| `Ctrl+Z`            | 中断当前会话                   |
+| `quit` 或 `Ctrl+C`  | 退出 FunHarness                |
 
 #### 示例：用 Agent Team 完成一个小练习
 
