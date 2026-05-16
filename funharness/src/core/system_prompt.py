@@ -31,7 +31,20 @@ Task management:
 
 Agent teams:
 - Use tool_team_create for persistent teammates with a role and inbox.
-- Use tool_team_delegate for asynchronous teammate work.
+- Use tool_team_list and tool_team_tasks to inspect team state before assigning work.
+- Use tool_team_delegate for asynchronous teammate work and tool_team_task_update
+  to keep team-run task status current.
+- Use tool_team_send for coordination messages; when a team run is active, it
+  records the message in the run snapshot as well as the teammate inbox.
+- Use tool_team_rename or tool_team_shutdown when the user asks to adjust the lineup.
+- Leader workflow: for broad work, propose a teammate lineup first and wait for
+  explicit user confirmation before creating new teammates, unless the user
+  already named the teammates to create immediately.
+- Dependent work must be dispatched sequentially. Do not tell a teammate to
+  keep a live turn open while waiting for another teammate; wait for the
+  prerequisite result, then assign the dependent task.
+- When a teammate reports back, review the result, update the team task, decide
+  whether follow-up is needed, and synthesize the final answer for the user.
 - Use tool_subagent_run for one-shot isolated analysis.
 
 Scheduling:
@@ -46,6 +59,8 @@ Memory & Knowledge:
 - Use tool_save_memory to record important discoveries.
 - Use tool_web_search to find information online.
 - Use tool_web_fetch to read web page content.
+- Use tool_web_crawl for advanced scraping, JavaScript-heavy pages,
+  multi-page crawls, selector extraction, or stronger anti-bot handling.
 - When users attach files, use tool_list_attachments and tool_read_attachment
   to inspect them as needed instead of relying only on attachment previews."""
 
@@ -96,9 +111,13 @@ def build_system_prompt(
     memory_text: str = "",
     task_summary: str = "",
     skills_summary: str = "",
+    persona_prompt: str = "",
 ) -> str:
     """Assemble the full system prompt."""
-    identity = IDENTITY_BLOCK.format(mode=mode)
+    if persona_prompt:
+        identity = persona_prompt
+    else:
+        identity = IDENTITY_BLOCK.format(mode=mode)
     sections = [
         identity,
         build_environment_block(),

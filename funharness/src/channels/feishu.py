@@ -151,12 +151,19 @@ class FeishuClient:
         text: str,
         reply_to_message_id: str | None = None,
     ) -> None:
+        """Send a message using post type with md tag for markdown rendering."""
         token = self.tenant_access_token()
-        content = json.dumps({"text": text}, ensure_ascii=False)
+        # Use post type with md tag so Feishu renders markdown
+        post_body = {
+            "zh_cn": {
+                "content": [[{"tag": "md", "text": text}]],
+            },
+        }
+        content = json.dumps(post_body, ensure_ascii=False)
         if reply_to_message_id:
             url = f"{self.config.api_base}/im/v1/messages/{reply_to_message_id}/reply"
             payload: dict[str, Any] = {
-                "msg_type": "text",
+                "msg_type": "post",
                 "content": content,
                 "uuid": str(uuid.uuid4()),
             }
@@ -164,7 +171,7 @@ class FeishuClient:
             url = f"{self.config.api_base}/im/v1/messages?receive_id_type=chat_id"
             payload = {
                 "receive_id": chat_id,
-                "msg_type": "text",
+                "msg_type": "post",
                 "content": content,
                 "uuid": str(uuid.uuid4()),
             }
@@ -293,6 +300,8 @@ class FeishuGateway:
         self._sessions_lock = threading.Lock()
         self._seen_events: dict[str, float] = {}
         self._seen_lock = threading.Lock()
+        self._ws_client: Any | None = None
+        self._http_server: ThreadingHTTPServer | None = None
 
     def serve_forever(self) -> None:
         if self.config.event_mode in {"ws", "websocket", "long_connection"}:
@@ -303,6 +312,21 @@ class FeishuGateway:
             raise RuntimeError(
                 "FEISHU_EVENT_MODE must be 'ws' for long connection or 'http' for callback."
             )
+
+    def shutdown(self) -> None:
+        """Stop the gateway gracefully."""
+        if self._http_server is not None:
+            try:
+                self._http_server.shutdown()
+            except Exception:
+                pass
+            self._http_server = None
+        if self._ws_client is not None:
+            try:
+                self._ws_client.stop()
+            except Exception:
+                pass
+            self._ws_client = None
 
     def _prepare_workspace(self) -> None:
         if self.config.workspace:
@@ -332,15 +356,16 @@ class FeishuGateway:
             .register_p2_im_message_receive_v1(on_message)
             .build()
         )
-        client = lark.ws.Client(
+        ws_client = lark.ws.Client(
             self.config.app_id,
             self.config.app_secret,
             event_handler=handler,
             log_level=lark.LogLevel.INFO,
         )
+        self._ws_client = ws_client
         print("FunHarness Feishu gateway starting in long connection mode.")
         print("Keep this process running, then click Verify/Save in Feishu.")
-        client.start()
+        ws_client.start()
 
     def serve_http(self) -> None:
         self._prepare_workspace()
@@ -357,6 +382,7 @@ class FeishuGateway:
                 print(f"[feishu] {self.address_string()} - {fmt % args}")
 
         server = ThreadingHTTPServer((self.config.host, self.config.port), Handler)
+        self._http_server = server
         print(
             f"FunHarness Feishu gateway listening on "
             f"http://{self.config.host}:{self.config.port}{self.config.callback_path}"

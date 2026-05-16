@@ -5,6 +5,7 @@ OpenAI-compatible client with streaming, retry, and callback support.
 Supports DeepSeek thinking mode with reasoning_content passthrough.
 """
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -15,12 +16,21 @@ from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 
 def _find_env():
     """Walk up to find .env file."""
-    d = Path(__file__).resolve().parent
-    for _ in range(5):
-        env = d / ".env"
-        if env.exists():
-            return env
-        d = d.parent
+    candidates = [Path.cwd()]
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent)
+    candidates.append(Path(__file__).resolve().parent)
+    seen = set()
+    for start in candidates:
+        d = start
+        for _ in range(5):
+            if d in seen:
+                break
+            seen.add(d)
+            env = d / ".env"
+            if env.exists():
+                return env
+            d = d.parent
     return None
 
 
@@ -28,7 +38,7 @@ _env = _find_env()
 if _env:
     load_dotenv(_env)
 
-client = OpenAI()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY") or "missing-api-key")
 MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 

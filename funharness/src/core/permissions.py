@@ -38,7 +38,7 @@ RISK_LEVELS = {
         "tool_run_command", "tool_runtime_run", "tool_subagent_run",
         "tool_team_delegate",
     ],
-    "web": ["tool_web_search"],
+    "web": ["tool_web_search", "tool_web_crawl"],
 }
 
 

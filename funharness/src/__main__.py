@@ -19,6 +19,21 @@ def main():
         feishu_main(sys.argv[2:])
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "qqbot":
+        from funharness.src.channels.qqbot import main as qqbot_main
+        qqbot_main(sys.argv[2:])
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "weixin":
+        from funharness.src.channels.weixin import main as weixin_main
+        weixin_main(sys.argv[2:])
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "weixin-login":
+        from funharness.src.channels.weixin import login_main as weixin_login
+        weixin_login(sys.argv[2:])
+        return
+
     # Resolve workspace relative to the original launch directory
     launch_dir = Path.cwd()
     workspace = launch_dir / WORKSPACE_DIR

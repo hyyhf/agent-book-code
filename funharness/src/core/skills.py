@@ -129,9 +129,12 @@ class SkillLoader:
         self._scanned = True
 
     def list_skills(self) -> list[dict]:
-        """List all available skills with name and description."""
-        if not self._scanned:
-            self._scan()
+        """List all available skills with name and description.
+
+        Always re-scans the filesystem so that newly added or removed
+        skills are reflected immediately without a backend restart.
+        """
+        self._scan()
         return [
             {"name": s.name, "description": s.description, "path": s.path}
             for s in self._skills.values()

@@ -22,6 +22,7 @@ from .core.context import (
     CONTEXT_SOFT_LIMIT,
 )
 from .core.memory import init_memory, read_memory, save_memory, search_memory
+from .core.persona import PersonaStore
 from .core.skills import SkillLoader
 from .core.session import Session, SessionManager
 from .core.permissions import (
@@ -36,7 +37,8 @@ from .core.tasks import (
 )
 from .core.runtime import RuntimeTaskManager
 from .core.schedule import ScheduleManager
-from .core.team import TeamManager, SubAgent
+from .core.team import TeamManager
+from .core.subagent import SubAgent
 from .core.observability import (
     Tracer, SpanKind, StructuredLogger, LogLevel, CostDashboard,
     FailurePattern, FailureType,
@@ -360,10 +362,12 @@ def tool_subagent_run(role: str, task: str, context: str = "") -> str:
         context: Optional short context
     """
     agent = _active_agent()
+    sub_tools = registry.subset(["file", "system", "search", "web", "memory"])
     if agent is not None:
-        subagent = SubAgent(role, model=agent.model, llm_client=agent.llm_client)
+        subagent = SubAgent(role, model=agent.model, llm_client=agent.llm_client,
+                            tool_registry=sub_tools)
     else:
-        subagent = SubAgent(role)
+        subagent = SubAgent(role, tool_registry=sub_tools)
     return subagent.run(task, context)
 
 
@@ -384,10 +388,81 @@ def tool_team_create(name: str, role: str, instructions: str = "") -> str:
 
 
 @registry.tool(category="agent")
+def tool_team_rename(name: str, new_name: str) -> str:
+    """Rename a persistent teammate and update the current team run.
+
+    Args:
+        name: Current teammate name
+        new_name: New teammate name
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    try:
+        member = agent.team.rename(name, new_name)
+    except KeyError:
+        return f"Unknown teammate: {name}"
+    except ValueError as exc:
+        return f"Could not rename teammate: {exc}"
+    return f"Renamed teammate to {member.name}"
+
+
+@registry.tool(category="agent")
 def tool_team_list() -> str:
     """List persistent teammates."""
     agent = _active_agent()
     return agent.team.summary() if agent else "(no active agent)"
+
+
+@registry.tool(category="agent")
+def tool_team_tasks(run_id: str = "") -> str:
+    """List tasks for the current or specified team run.
+
+    Args:
+        run_id: Optional team run ID. Uses the current run when omitted.
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    run = agent.team.get_run(run_id) if run_id else agent.team.current_run()
+    if not run:
+        return "(no active team run)"
+    tasks = run.get("tasks", [])
+    if not tasks:
+        return "(no team tasks)"
+    return json.dumps(tasks, ensure_ascii=False, indent=2)
+
+
+@registry.tool(category="agent")
+def tool_team_task_update(task_id: str, status: str = "", owner: str = "", output: str = "", run_id: str = "") -> str:
+    """Update a task in the current team run.
+
+    Args:
+        task_id: Team task ID like TR1
+        status: Optional status: pending/in_progress/done/failed/cancelled/completed
+        owner: Optional teammate owner
+        output: Optional result or failure summary
+        run_id: Optional team run ID. Uses the current run when omitted.
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    run = agent.team.get_run(run_id) if run_id else agent.team.current_run()
+    if not run:
+        return "(no active team run)"
+    target_run_id = run["run_id"]
+    try:
+        updated = agent.team.update_run_task(target_run_id, task_id, status=status, owner=owner, output=output)
+    except KeyError:
+        return f"Unknown team task: {task_id}"
+    except ValueError as exc:
+        return str(exc)
+    if updated is None:
+        return f"Unknown team run: {target_run_id}"
+    task = next((item for item in updated.get("tasks", []) if item.get("task_id") == task_id), None)
+    if not task:
+        return f"Updated team task: {task_id}"
+    return f"Updated {task_id}: {task.get('status', '')}"
 
 
 @registry.tool(category="agent")
@@ -401,7 +476,17 @@ def tool_team_send(to: str, message: str) -> str:
     agent = _active_agent()
     if agent is None:
         return "(no active agent)"
-    return agent.team.send("lead", to, message)
+    run = agent.team.current_run()
+    if run:
+        try:
+            agent.team.send_run_message(run["run_id"], "lead", to, message)
+        except KeyError:
+            return f"Unknown teammate: {to}"
+        return f"Message sent to {to} and recorded in team run {run['run_id']}"
+    try:
+        return agent.team.send("lead", to, message)
+    except KeyError:
+        return f"Unknown teammate: {to}"
 
 
 @registry.tool(category="agent")
@@ -430,8 +515,67 @@ def tool_team_delegate(to: str, task: str, context: str = "") -> str:
     agent = _active_agent()
     if agent is None:
         return "(no active agent)"
-    runtime_id = agent.team.delegate(to, task, context)
+    try:
+        runtime_id = agent.team.delegate(to, task, context)
+    except KeyError:
+        return f"Unknown teammate: {to}"
+    except ValueError as exc:
+        return str(exc)
     return f"Delegated to {to}. Runtime task: {runtime_id}"
+
+
+@registry.tool(category="agent")
+def tool_team_start(name: str) -> str:
+    """Start a persistent teammate worker.
+
+    Args:
+        name: Teammate name
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    try:
+        agent.team.start_member(name)
+    except KeyError:
+        return f"Unknown teammate: {name}"
+    return f"Started teammate: {name}"
+
+
+@registry.tool(category="agent")
+def tool_team_cancel(name: str, reason: str = "") -> str:
+    """Cancel a teammate's current task while keeping the worker alive.
+
+    Args:
+        name: Teammate name
+        reason: Optional cancel reason
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    try:
+        agent.team.cancel_member(name, reason=reason)
+    except KeyError:
+        return f"Unknown teammate: {name}"
+    return f"Cancel requested for teammate: {name}"
+
+
+@registry.tool(category="agent")
+def tool_team_shutdown(name: str, reason: str = "", force: bool = False) -> str:
+    """Shutdown a persistent teammate worker.
+
+    Args:
+        name: Teammate name
+        reason: Optional shutdown reason
+        force: Whether to drop queued tasks before stopping
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    try:
+        agent.team.shutdown_member(name, reason=reason, force=force)
+    except KeyError:
+        return f"Unknown teammate: {name}"
+    return f"Shutdown requested for teammate: {name}"
 
 
 class FunHarnessAgent:
@@ -474,6 +618,8 @@ class FunHarnessAgent:
         self.hook_registry = init_hooks()
         self.middleware_chain = init_middleware()
         self.skill_loader = SkillLoader()
+        self.persona_store = PersonaStore()
+        self.active_persona_id: str | None = self.persona_store.get_active_id()
 
         # Observability
         self.tracer = Tracer()
@@ -486,7 +632,8 @@ class FunHarnessAgent:
         self.git_tracker = GitTracker(".")
         self.runtime = RuntimeTaskManager(work_dir=".")
         self.scheduler = ScheduleManager(on_fire=self._run_scheduled_prompt)
-        self.team = TeamManager(runtime=self.runtime, model=self.model, llm_client=self.llm_client)
+        self.team = TeamManager(runtime=self.runtime, model=self.model, llm_client=self.llm_client,
+                                tool_registry=registry.subset(["file", "system", "search", "web", "memory"]))
         self.scheduler.start()
 
         tasks_path = Path(".funharness/tasks.json")
@@ -496,6 +643,8 @@ class FunHarnessAgent:
         # Session state
         self._build_system_prompt()
         self.messages = [{"role": "system", "content": self._system_prompt}]
+        # Inject begin_dialogs for persisted active persona
+        self._inject_begin_dialogs_for_active_persona()
         self.current_session = Session()
         self.current_session.messages = self.messages
         self.attachments = AttachmentManager(self.current_session.id)
@@ -513,10 +662,15 @@ class FunHarnessAgent:
         task_summary = "\n\n".join(s for s in summaries if s)
         skills_summary = self.skill_loader.skills_summary()
         extra_context = build_context_block()
+        persona_prompt = ""
+        if self.active_persona_id:
+            persona = self.persona_store.get(self.active_persona_id)
+            if persona:
+                persona_prompt = persona.system_prompt
         self._system_prompt = build_system_prompt(
             registry, mode=self.mode.value, extra_context=extra_context,
             memory_text=memory_text, task_summary=task_summary,
-            skills_summary=skills_summary,
+            skills_summary=skills_summary, persona_prompt=persona_prompt,
         )
 
     def _emit_status(self, msg):
@@ -536,6 +690,7 @@ class FunHarnessAgent:
                 "Be concise, concrete, and include any follow-up actions if needed.",
                 model=self.model,
                 llm_client=self.llm_client,
+                tool_registry=registry.subset(["file", "system", "search", "web", "memory"]),
             )
             return subagent.run(record.prompt, context=context)
 
@@ -581,6 +736,9 @@ class FunHarnessAgent:
 
     def get_info(self) -> dict:
         """Return current agent state info."""
+        active_persona = None
+        if self.active_persona_id:
+            active_persona = self.persona_store.get(self.active_persona_id)
         return {
             "mode": self.mode.value,
             "tools": len(registry),
@@ -592,6 +750,8 @@ class FunHarnessAgent:
             "teammates": len(self.team.list()),
             "runtime_tasks": len(self.runtime.list()),
             "schedules": len(self.scheduler.list()),
+            "active_persona_id": self.active_persona_id,
+            "active_persona_name": active_persona.name if active_persona else None,
         }
 
     def set_model_client(self, model: str, llm_client) -> None:
@@ -644,6 +804,7 @@ class FunHarnessAgent:
             "/dashboard": lambda: (self.dashboard.report() if self.dashboard._records else "(no data yet)"),
             "/failures": lambda: self._handle_failures(),
             "/attachments": lambda: self.attachments.summary(include_preview=True),
+            "/persona": lambda: self._handle_persona(arg),
         }
 
         if command in handlers:
@@ -712,6 +873,7 @@ class FunHarnessAgent:
             "  /dashboard  - Show cost dashboard\n"
             "  /failures   - Analyze failure patterns\n"
             "  /export     - Export observability data\n"
+            "  /persona    - List/use/create/delete personas\n"
             "  clear       - Clear conversation\n"
             "  quit        - Exit FunHarness"
         )
@@ -730,6 +892,8 @@ class FunHarnessAgent:
         self.attachments = AttachmentManager(self.current_session.id)
         self._build_system_prompt()
         self.messages = [{"role": "system", "content": self._system_prompt}]
+        # Re-inject begin_dialogs for active persona
+        self._inject_begin_dialogs_for_active_persona()
         self.current_session.messages = self.messages
         self.tool_calls_history.clear()
         # Reset tracer for new session
@@ -789,6 +953,148 @@ class FunHarnessAgent:
             self.messages[0] = {"role": "system", "content": self._system_prompt}
             return f"Mode switched to: {self.mode.value}"
         return f"Unknown mode: {arg}. Use auto/suggest/approve."
+
+    def _handle_persona(self, arg: str) -> str:
+        """Handle /persona slash command family."""
+        parts = arg.strip().split(maxsplit=2) if arg.strip() else []
+        sub = parts[0].lower() if parts else ""
+
+        if not sub:
+            # List all personas with active indicator
+            personas = self.persona_store.list_all()
+            if not personas:
+                return (
+                    "No personas defined.\n"
+                    "Usage:\n"
+                    "  /persona create <id> <name>  - Create a new persona\n"
+                    "  /persona use <id>            - Activate a persona\n"
+                    "  /persona off                 - Deactivate current persona\n"
+                    "  /persona show <id>           - Show persona details\n"
+                    "  /persona delete <id>         - Delete a persona"
+                )
+            lines = ["Personas:"]
+            for p in personas:
+                active = " [ACTIVE]" if p.persona_id == self.active_persona_id else ""
+                lines.append(f"  - {p.persona_id}: {p.name}{active}")
+            lines.append("")
+            lines.append(f"Active: {self.active_persona_id or '(none / default)'}")
+            return "\n".join(lines)
+
+        if sub == "use":
+            if len(parts) < 2:
+                return "Usage: /persona use <persona_id>"
+            return self.set_persona(parts[1])
+
+        if sub == "off":
+            return self.clear_persona()
+
+        if sub == "create":
+            if len(parts) < 3:
+                return "Usage: /persona create <id> <name>"
+            persona_id = parts[1]
+            name = parts[2]
+            try:
+                persona = self.persona_store.create(
+                    persona_id=persona_id,
+                    name=name,
+                    system_prompt=f"You are {name}. Follow user instructions carefully.",
+                )
+                return (
+                    f"Persona '{persona_id}' created: {name}\n"
+                    f"Edit its system_prompt via the GUI or by editing "
+                    f".funharness/personas.json directly."
+                )
+            except ValueError as exc:
+                return str(exc)
+
+        if sub == "delete":
+            if len(parts) < 2:
+                return "Usage: /persona delete <persona_id>"
+            persona_id = parts[1]
+            if persona_id == self.active_persona_id:
+                self.clear_persona()
+            try:
+                self.persona_store.delete(persona_id)
+                return f"Persona '{persona_id}' deleted."
+            except ValueError as exc:
+                return str(exc)
+
+        if sub == "show":
+            if len(parts) < 2:
+                return "Usage: /persona show <persona_id>"
+            persona = self.persona_store.get(parts[1])
+            if persona is None:
+                return f"Unknown persona: {parts[1]}"
+            active = " [ACTIVE]" if persona.persona_id == self.active_persona_id else ""
+            lines = [
+                f"Persona: {persona.persona_id}{active}",
+                f"Name: {persona.name}",
+                f"Created: {persona.created_at}",
+                f"Updated: {persona.updated_at}",
+                f"Begin dialogs: {len(persona.begin_dialogs)} entries",
+                f"System prompt ({len(persona.system_prompt)} chars):",
+                persona.system_prompt[:500],
+            ]
+            if len(persona.system_prompt) > 500:
+                lines.append("...(truncated)")
+            return "\n".join(lines)
+
+        return (
+            "Unknown /persona sub-command. Usage:\n"
+            "  /persona                    - List all personas\n"
+            "  /persona use <id>           - Activate a persona\n"
+            "  /persona off                - Deactivate current persona\n"
+            "  /persona create <id> <name> - Create a new persona\n"
+            "  /persona show <id>          - Show persona details\n"
+            "  /persona delete <id>        - Delete a persona"
+        )
+
+    def set_persona(self, persona_id: str) -> str:
+        """Activate a persona by ID. Rebuilds system prompt."""
+        persona = self.persona_store.get(persona_id)
+        if persona is None:
+            return f"Unknown persona: {persona_id}"
+        self.active_persona_id = persona_id
+        self.persona_store.set_active_id(persona_id)
+        self._build_system_prompt()
+        if self.messages and self.messages[0].get("role") == "system":
+            self.messages[0] = {"role": "system", "content": self._system_prompt}
+        else:
+            self.messages.insert(0, {"role": "system", "content": self._system_prompt})
+        self._inject_begin_dialogs(persona)
+        return f"Persona activated: {persona.name} ({persona_id})"
+
+    def clear_persona(self) -> str:
+        """Deactivate the current persona. Reverts to default identity."""
+        self.active_persona_id = None
+        self.persona_store.set_active_id(None)
+        self._build_system_prompt()
+        if self.messages and self.messages[0].get("role") == "system":
+            self.messages[0] = {"role": "system", "content": self._system_prompt}
+        else:
+            self.messages.insert(0, {"role": "system", "content": self._system_prompt})
+        return "Persona deactivated. Using default identity."
+
+    def _inject_begin_dialogs(self, persona) -> None:
+        """Inject begin_dialogs from a persona into messages (only when conversation is fresh)."""
+        if not persona.begin_dialogs:
+            return
+        # Only inject when conversation has just the system prompt
+        if len(self.messages) > 1:
+            return
+        for dialog in persona.begin_dialogs:
+            role = dialog.get("role", "user")
+            content = dialog.get("content", "")
+            if role in ("user", "assistant") and content:
+                self.messages.append({"role": role, "content": content})
+
+    def _inject_begin_dialogs_for_active_persona(self) -> None:
+        """Re-inject begin_dialogs for the currently active persona, if any."""
+        if not self.active_persona_id:
+            return
+        persona = self.persona_store.get(self.active_persona_id)
+        if persona:
+            self._inject_begin_dialogs(persona)
 
     def _handle_next(self):
         if not self.task_list:
@@ -927,12 +1233,67 @@ class FunHarnessAgent:
             instructions = parts[3] if len(parts) > 3 else ""
             member = self.team.create(parts[1], parts[2], instructions)
             return f"Teammate ready: {member.name} [{member.role}]"
+        if action == "rename" and len(parts) >= 3:
+            try:
+                member = self.team.rename(parts[1], parts[2])
+            except KeyError:
+                return f"Unknown teammate: {parts[1]}"
+            except ValueError as exc:
+                return f"Could not rename teammate: {exc}"
+            return f"Renamed teammate to {member.name}"
         if action == "inbox" and len(parts) >= 2:
             items = self.team.peek_inbox(parts[1])
             return json.dumps(items, ensure_ascii=False, indent=2) if items else "(inbox empty)"
         if action == "send" and len(parts) >= 3:
             return self.team.send("lead", parts[1], parts[2])
-        return "Usage: /team | /team create <name> <role> [instructions] | /team inbox <name> | /team send <name> <message>"
+        if action == "tasks":
+            run = self.team.current_run()
+            if not run:
+                return "(no active team run)"
+            return json.dumps(run.get("tasks", []), ensure_ascii=False, indent=2)
+        if action == "task" and len(parts) >= 3:
+            run = self.team.current_run()
+            if not run:
+                return "(no active team run)"
+            try:
+                updated = self.team.update_run_task(run["run_id"], parts[1], status=parts[2])
+            except KeyError:
+                return f"Unknown team task: {parts[1]}"
+            except ValueError as exc:
+                return str(exc)
+            return f"Updated team task: {parts[1]}" if updated else "(no active team run)"
+        if action == "start" and len(parts) >= 2:
+            try:
+                self.team.start_member(parts[1])
+            except KeyError:
+                return f"Unknown teammate: {parts[1]}"
+            return f"Started teammate: {parts[1]}"
+        if action == "cancel" and len(parts) >= 2:
+            reason = " ".join(parts[2:]) if len(parts) > 2 else ""
+            try:
+                self.team.cancel_member(parts[1], reason=reason)
+            except KeyError:
+                return f"Unknown teammate: {parts[1]}"
+            return f"Cancel requested for teammate: {parts[1]}"
+        if action == "shutdown" and len(parts) >= 2:
+            reason = " ".join(parts[2:]) if len(parts) > 2 else ""
+            try:
+                self.team.shutdown_member(parts[1], reason=reason)
+            except KeyError:
+                return f"Unknown teammate: {parts[1]}"
+            return f"Shutdown requested for teammate: {parts[1]}"
+        if action == "delete" and len(parts) >= 2:
+            try:
+                result = self.team.delete(parts[1])
+            except KeyError:
+                return f"Unknown teammate: {parts[1]}"
+            return result
+        return (
+            "Usage: /team | /team create <name> <role> [instructions] | "
+            "/team rename <name> <new_name> | /team delete <name> | /team inbox <name> | "
+            "/team send <name> <message> | /team tasks | /team task <task_id> <status> | "
+            "/team start <name> | /team cancel <name> [reason] | /team shutdown <name> [reason]"
+        )
 
     def _handle_delegate(self, arg: str) -> str:
         parts = arg.split(maxsplit=1)
@@ -1012,6 +1373,8 @@ class FunHarnessAgent:
         self.session_mgr.save(self.current_session)
         self.current_session = Session()
         self.messages = [{"role": "system", "content": self._system_prompt}]
+        # Re-inject begin_dialogs for active persona
+        self._inject_begin_dialogs_for_active_persona()
         self.current_session.messages = self.messages
         self.tool_calls_history.clear()
 

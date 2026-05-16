@@ -247,10 +247,14 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
-> - **2026-05-05 —— FunHarness Studio GUI 已上线：**
->   - 提供 Electron + FastAPI 本地桌面 GUI，支持会话、工作区、附件、模型配置、Agent 面板与可观测性面板。
+> - **2026-05-16 —— 新增 QQ 机器人 & 微信机器人通道：**
+>   - 新增 QQ 机器人通道（基于 `qqbot-agent-sdk`，WebSocket 网关，支持 C2C、文件收发）。
+>   - 新增微信机器人通道（基于 `openclaw-weixin` 协议，扫码登录 + getUpdates 长轮询，文本消息收发）。
+>   - FunHarness 现已支持 ** 飞书 / QQ / 微信** 五种输入通道，共享同一套 Agent Core。
 > - **2026-05-06 —— TUI 能力补齐与修复：**
 >   - TUI 新增附件管理、慢命令后台执行、Skills/附件专用展示；修复工具结果回调、流式元数据、Skills frontmatter 与 Web Search 展示等问题。
+> - **2026-05-05 —— FunHarness Studio GUI 已上线：**
+>   - 提供 Electron + FastAPI 本地桌面 GUI，支持会话、工作区、附件、模型配置、Agent 面板与可观测性面板。
 > - **2026-04-29 —— 补充Agent Teams：**
 >   - 本次更新补齐了 `FunHarness` 的 **Agent Teams / SubAgent、持久任务系统、后台运行时与定时调度** 能力，让它从单一对话助手升级为可以分工、排期、后台执行的 mini Agent 工作台。
 
@@ -293,7 +297,7 @@ funharness/   完整生产版本（TUI + 飞书通道）
 | **可观测性**              | 结构化日志、Span 追踪、成本看板、失败模式分析、一键导出                                                                   |
 | **TUI 界面**              | 基于 Textual 的终端 UI，流式渲染、Markdown 展示、工具块边框、附件/Skills 专用展示                                         |
 | **FunHarness Studio GUI** | Electron + Vite + FastAPI 本地桌面 GUI，复用同一套 Agent Core                                                            |
-| **飞书机器人**            | 长连接模式，无需公网地址，私聊/群聊均可触发                                                                               |
+| **IM 机器人通道**         | 飞书（长连接）、QQ（WebSocket）、微信（长轮询），三通道均无需公网地址，私聊/群聊均可触发                                    |
 
 
 ---
@@ -304,7 +308,7 @@ funharness/   完整生产版本（TUI + 飞书通道）
 funharness/
 └── src/
     ├── agent.py             # 核心 Agent 类（FunHarnessAgent）
-    ├── __main__.py          # 入口：fh 命令 / fh feishu 命令
+    ├── __main__.py          # 入口：fh / fh feishu / fh qqbot / fh weixin
     ├── core/
     │   ├── tools.py         # ToolRegistry + 30+ 个内置工具
     │   ├── llm.py           # LLM 调用、流式处理、重试
@@ -326,7 +330,9 @@ funharness/
     │   ├── banner.py        # ASCII art 金色渐变 banner
     │   └── theme.py         # 颜色主题
     └── channels/
-        └── feishu.py        # 飞书长连接机器人通道
+        ├── feishu.py        # 飞书长连接机器人通道
+        ├── qqbot.py         # QQ 机器人通道（WebSocket + REST API）
+        └── weixin.py        # 微信机器人通道（扫码登录 + 长轮询）
 
 funGUI/                       # FunHarness Studio 本地桌面 GUI
 ├── backend/                  # FastAPI 服务，连接 FunHarnessAgent
@@ -519,59 +525,90 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 <div align="center"><img src="assets/chinese-divider-transparent-cropped.png" width="90%" /></div>
 
-## 飞书机器人通道
+## IM 机器人通道
 
-[![Feishu](https://img.shields.io/badge/飞书-长连接模式-00B4AB?style=for-the-badge&logo=lark&logoColor=white)](./docs/feishu_channel.zh.md)  [![Permission](https://img.shields.io/badge/权限模式-suggest%20推荐%20%7Cauto%20%7Capprove-orange?style=for-the-badge)](#)
+[![Feishu](https://img.shields.io/badge/飞书-长连接-00B4AB?style=for-the-badge&logo=lark&logoColor=white)](./docs/feishu_channel.zh.md) [![QQ](https://img.shields.io/badge/QQ-WebSocket-12B7F5?style=for-the-badge&logo=tencentqq&logoColor=white)](#) [![WeChat](https://img.shields.io/badge/微信-长轮询-07C160?style=for-the-badge&logo=wechat&logoColor=white)](#) [![Permission](https://img.shields.io/badge/权限模式-suggest%20%7C%20auto-orange?style=for-the-badge)](#)
 
-FunHarness 也支持以**飞书机器人**作为输入通道：用户在飞书里给机器人发消息，本地 FunHarness 负责运行 Agent、调用工具，并把结果回发到飞书。
-
-这一部分主要展示 FunHarness 的通道扩展能力：同一个 Agent Core 不只可以接 TUI，也可以接 IM 机器人。飞书通道采用长连接模式，本地程序主动连接飞书开放平台接收事件，**不需要公网地址**，适合教学演示和内网试验。
-
-> 详细配置、事件订阅和常见问题见：[点击查看详细配置](./docs/feishu_channel.zh.md)
+FunHarness 支持通过 **IM 机器人** 作为输入通道：用户在聊天软件中发消息，本地 FunHarness 运行 Agent 并回复结果。同一套 Agent Core 可以同时接入 TUI、GUI 和任意 IM 通道。
 
 ```
-飞书消息 -> 长连接事件 -> 本地 FunHarness -> Agent Loop + Tools -> 回复飞书
+IM 消息 -> 通道网关（长连接/WebSocket/长轮询） -> 本地 FunHarness -> Agent Loop + Tools -> 回复 IM
 ```
 
-### 快速启动
+| 通道 | 接入方式 | 消息类型 | 启动命令 | 需要公网 |
+|------|---------|---------|---------|:-------:|
+| **飞书** | 长连接 (WebSocket via lark-oapi) | 文本 | `uv run fh feishu` | 否 |
+| **QQ** | WebSocket 网关 (qqbot-agent-sdk) | 文本 + 文件收发 | `uv run fh qqbot` | 否 |
+| **微信** | getUpdates 长轮询 (ilinkai API) | 文本 | `uv run fh weixin` | 否 |
+
+---
+
+### 飞书机器人
+
+在飞书开放平台创建自建应用，开启机器人能力。详细配置见 [飞书通道文档](./docs/feishu_channel.zh.md)。
+
 
 ```bash
-# 1. 在飞书开放平台创建自建应用，开启机器人能力，添加 im.message.receive_v1 事件
-# 2. 配置 .env
-```
+# .env 配置
+FEISHU_APP_ID=cli_xxx
+FEISHU_APP_SECRET=xxx
+FEISHU_EVENT_MODE=ws
 
-`.env` 飞书相关配置：
-
-```bash
-OPENAI_API_KEY=your_api_key
-OPENAI_MODEL_NAME=deepseek-v3
-
-FEISHU_APP_ID=cli_xxx               # 飞书应用 App ID
-FEISHU_APP_SECRET=xxx               # 飞书应用 App Secret
-FEISHU_EVENT_MODE=ws                # 长连接模式（不需要公网）
-FEISHU_PERMISSION_MODE=suggest      # 推荐先用 suggest 模式
-```
-
-| 配置项                   | 是否必填 | 说明                                          |
-| ------------------------ | :------: | --------------------------------------------- |
-| `FEISHU_APP_ID`          |   必填   | 飞书应用的 App ID，通常以 `cli_` 开头         |
-| `FEISHU_APP_SECRET`      |   必填   | 飞书应用的 App Secret                         |
-| `FEISHU_EVENT_MODE`      |   推荐   | `ws` 表示长连接，不需要公网地址               |
-| `FEISHU_PERMISSION_MODE` |   推荐   | 建议先用 `suggest`，更安全                    |
-| `OPENAI_API_KEY`         |   必填   | FunHarness 调用模型需要                       |
-| `OPENAI_MODEL_NAME`      |   推荐   | 例如 `deepseek-v4-flash` 或 `deepseek-v4-pro` |
-
-```bash
-# 3. 启动通道
+# 启动
 uv run fh feishu
 ```
 
-常用消息：
+---
+
+### QQ 机器人
+
+在 [QQ 开放平台](https://q.qq.com/) 创建机器人应用，获取 App ID 和 Client Secret。支持 C2C 私聊和群聊消息，并可自动接收和发送文件（图片、文档、音视频）。
+
+```bash
+# .env 配置
+QQ_APP_ID=your_qq_app_id
+QQ_CLIENT_SECRET=your_qq_client_secret
+QQ_PERMISSION_MODE=suggest
+
+# 启动
+uv run fh qqbot
+```
+
+| 配置项 | 说明 |
+|--------|------|
+| `QQ_APP_ID` | QQ 开放平台机器人 App ID |
+| `QQ_CLIENT_SECRET` | 机器人 Client Secret |
+| `QQ_PERMISSION_MODE` | `suggest`（推荐）或 `auto` |
+
+---
+
+### 微信机器人
+
+微信通道基于 [openclaw-weixin](https://github.com/Tencent/openclaw-weixin) 的后端 API 协议实现。首次使用需要扫码登录，之后凭证会自动保存。
+
+```bash
+# 第一步：扫码登录（终端会显示二维码）
+uv run fh weixin-login
+
+# 第二步：启动微信网关
+uv run fh weixin
+```
+
+| 配置项 | 说明 |
+|--------|------|
+| `WEIXIN_PERMISSION_MODE` | `suggest`（推荐）或 `auto` |
+| `WEIXIN_WORKSPACE` | Agent 工作目录（可选） |
+
+登录凭证保存在 `.funharness/weixin_credentials.json`，后续启动无需重新扫码。
+
+---
+
+### 通用说明
+
+所有 IM 通道均支持以下命令：
 
 ```
-帮我查看当前项目结构
-@FunHarness 帮我阅读 README 并总结
-/help        查看所有命令
+/help        查看帮助
 /interrupt   中断当前任务
 ```
 
@@ -585,7 +622,8 @@ uv run fh feishu
 
 </div>
 
-> **当前限制**：飞书通道目前只处理文本消息；`suggest` 模式下高风险操作会被拒绝（暂不支持远程交互式 approval）；更多说明见 [docs/feishu_channel.zh.md](./docs/feishu_channel.zh.md)。
+
+> **当前限制**：IM 通道的 `suggest` 模式下高风险操作会被拒绝（暂不支持远程交互式审批）。如需自动执行，可设置 `*_PERMISSION_MODE=auto`，仅在受信任的工作区使用。
 
 <div align="center"><img src="assets/chinese-divider-transparent-cropped.png" width="80%" /></div>
 
@@ -596,6 +634,8 @@ uv run fh feishu
 | `openai`          | >=2.32.0 | LLM API 调用（兼容任意 OpenAI 格式服务商） |
 | `textual[syntax]` | >=8.2.4  | TUI 界面框架                               |
 | `lark-oapi`       | >=1.4.23 | 飞书机器人 SDK                             |
+| `qqbot-agent-sdk` | >=1.2.2  | QQ 机器人 SDK（WebSocket + REST API）      |
+| `qrcode`          | >=8.0    | 微信扫码登录终端二维码显示                 |
 | `python-dotenv`   | >=1.2.2  | `.env` 配置加载                            |
 
 

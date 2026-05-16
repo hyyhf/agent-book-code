@@ -14,11 +14,17 @@ dependencies = [
     "python-docx>=1.2.0",
     "pypdf>=6.4.0",
     "textual[syntax]>=8.2.4",
+    "scrapling[fetchers]>=0.4.8",
+    "qqbot-agent-sdk>=1.2.2",
+    "qrcode>=8.0",
+    "cryptography>=44.0.0",
 ]
 
 [project.scripts]
 fh = "funharness.src.__main__:main"
 fh-feishu = "funharness.src.channels.feishu:main"
+fh-weixin = "funharness.src.channels.weixin:main"
+fh-weixin-login = "funharness.src.channels.weixin:login_main"
 
 [build-system]
 requires = ["setuptools>=68"]
