@@ -41,6 +41,7 @@ from funharness.src.agent import FunHarnessAgent
 logger = logging.getLogger(__name__)
 
 MAX_TEXT_CHARS = 3500
+NEW_SESSION_COMMANDS = {"/new", "/restart", "/reset", "/重新开始", "重新开始"}
 
 # File extensions considered "sendable" when detected in tool output
 _SENDABLE_EXTENSIONS = {
@@ -256,6 +257,17 @@ class QQBotAgentSession:
 
     def interrupt(self) -> None:
         self.agent.request_interrupt()
+
+    def new_session(self) -> str:
+        if not self.lock.acquire(blocking=False):
+            return (
+                "FunHarness is still working on the previous request. "
+                "Send /interrupt to stop it before starting a new session."
+            )
+        try:
+            return self.agent.handle_slash_command("/new") or "New session started."
+        finally:
+            self.lock.release()
 
     # -- file upload helpers -----------------------------------------------
 
@@ -635,6 +647,7 @@ class QQBotGateway:
                 chat_scope, chat_id,
                 "FunHarness QQ Bot commands:\n"
                 "/help - show this message\n"
+                "/new - start a new conversation session\n"
                 "/interrupt - stop the current local agent run\n"
                 "/files - list attached files in this session\n\n"
                 "Supported inputs:\n"
@@ -648,6 +661,14 @@ class QQBotGateway:
             return
 
         session = self._session_for(chat_scope, chat_id, chat_key)
+
+        if cmd in NEW_SESSION_COMMANDS:
+            self._send_text_sync(
+                chat_scope, chat_id,
+                session.new_session(),
+                message_id,
+            )
+            return
 
         if cmd in {"/interrupt", "interrupt", "stop"}:
             session.interrupt()

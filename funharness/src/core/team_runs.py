@@ -1,4 +1,4 @@
-﻿"""
+"""
 FunHarness - Agent team run snapshots.
 """
 from __future__ import annotations
@@ -240,7 +240,7 @@ class TeamRunManager:
                 name="lead",
                 role="lead",
                 kind="leader",
-                avatar_id="leader",
+                avatar_id="leader_rb",
                 status="running",
                 progress=12,
                 current_task="Plan and coordinate team work",
@@ -324,7 +324,6 @@ class TeamRunManager:
         for agent in run.agents or []:
             if agent.name == old_safe:
                 agent.name = new_safe
-                agent.avatar_id = _avatar_id(new_safe)
                 changed = True
         if not changed:
             return run
@@ -352,10 +351,11 @@ class TeamRunManager:
         if any(agent.name == member.name for agent in agents):
             return
         now = time.time()
+        member_index = sum(1 for a in agents if a.kind != "leader")
         agents.append(TeamRunAgent(
             name=member.name,
             role=member.role,
-            avatar_id=_avatar_id(member.name),
+            avatar_id=_avatar_id(member_index),
             status=member.status,
             progress=0,
             started_at=0.0,
@@ -562,11 +562,11 @@ class TeamRunManager:
         self._save(run)
         return run
     def _save_index(self, run_id: str) -> None:
-        self.index_path.write_text(json.dumps({"current_run_id": run_id}, indent=2), encoding="utf-8")
+        _write_text_atomic(self.index_path, json.dumps({"current_run_id": run_id}, indent=2))
 
     def _save(self, run: TeamRun) -> None:
         path = self.root / f"{_safe_name(run.run_id)}.json"
-        path.write_text(json.dumps(run.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        _write_text_atomic(path, json.dumps(run.to_dict(), indent=2, ensure_ascii=False))
 
     def _update_agent(self, run: TeamRun, name: str, **updates: Any) -> None:
         now = time.time()
@@ -652,6 +652,19 @@ def _safe_name(name: str) -> str:
     return "".join(ch for ch in name.strip().lower() if ch.isalnum() or ch in ("-", "_"))
 
 
+def _write_text_atomic(path: Path, text: str) -> None:
+    tmp_path = path.with_name(f"{path.name}.{time.time_ns()}.tmp")
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        tmp_path.replace(path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
 def _normalize_task_status(status: str) -> str:
     value = status.strip().lower()
     if value in {"", "none"}:
@@ -663,9 +676,8 @@ def _normalize_task_status(status: str) -> str:
     return ""
 
 
-def _avatar_id(name: str) -> str:
-    value = sum(ord(ch) for ch in name)
-    return f"avatar-{(value % 8) + 1:02d}"
+def _avatar_id(index: int) -> str:
+    return f"avatar-{(index % 8) + 1:02d}_rb"
 
 
 def _default_timeline(started_at: float) -> list[dict[str, Any]]:

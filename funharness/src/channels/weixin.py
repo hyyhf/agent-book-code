@@ -54,6 +54,7 @@ FIXED_LOGIN_BASE_URL = "https://ilinkai.weixin.qq.com"
 DEFAULT_BOT_TYPE = "3"
 CHANNEL_VERSION = "funharness-weixin/1.0.0"
 MAX_TEXT_CHARS = 3500
+NEW_SESSION_COMMANDS = {"/new", "/restart", "/reset", "/重新开始", "重新开始"}
 LONG_POLL_TIMEOUT_S = 35
 MAX_CONSECUTIVE_FAILURES = 3
 BACKOFF_DELAY_S = 30
@@ -630,6 +631,17 @@ class WeixinAgentSession:
     def interrupt(self) -> None:
         self.agent.request_interrupt()
 
+    def new_session(self) -> str:
+        if not self.lock.acquire(blocking=False):
+            return (
+                "FunHarness is still working on the previous request. "
+                "Send /interrupt to stop it before starting a new session."
+            )
+        try:
+            return self.agent.handle_slash_command("/new") or "New session started."
+        finally:
+            self.lock.release()
+
     # -- callbacks -------------------------------------------------------------
 
     def _on_token(self, token: str) -> None:
@@ -817,6 +829,7 @@ class WeixinGateway:
                     user_id,
                     "FunHarness WeChat commands:\n"
                     "/help - show this message\n"
+                    "/new - start a new conversation session\n"
                     "/interrupt - stop the current local agent run\n"
                     "/files - list attached files in this session\n\n"
                     "Supported inputs:\n"
@@ -831,6 +844,13 @@ class WeixinGateway:
 
         session = self._session_for(user_id)
         session.set_context_token(context_token)
+
+        if cmd in NEW_SESSION_COMMANDS:
+            try:
+                self.api.send_text(user_id, session.new_session(), context_token)
+            except Exception:
+                pass
+            return
 
         if cmd in {"/interrupt", "interrupt", "stop"}:
             session.interrupt()

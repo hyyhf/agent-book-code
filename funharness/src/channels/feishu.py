@@ -27,6 +27,7 @@ from funharness.src.agent import FunHarnessAgent
 DEFAULT_API_BASE = "https://open.feishu.cn/open-apis"
 DEFAULT_CALLBACK_PATH = "/feishu/events"
 MAX_TEXT_CHARS = 3500
+NEW_SESSION_COMMANDS = {"/new", "/restart", "/reset", "/重新开始", "重新开始"}
 
 
 def _load_env() -> None:
@@ -254,6 +255,17 @@ class FeishuAgentSession:
 
     def interrupt(self) -> None:
         self.agent.request_interrupt()
+
+    def new_session(self) -> str:
+        if not self.lock.acquire(blocking=False):
+            return (
+                "FunHarness is still working on the previous request. "
+                "Send /interrupt to stop it before starting a new session."
+            )
+        try:
+            return self.agent.handle_slash_command("/new") or "New session started."
+        finally:
+            self.lock.release()
 
     def _on_token(self, token: str) -> None:
         self._final_buffer.append(token)
@@ -487,6 +499,7 @@ class FeishuGateway:
                 chat_id,
                 "FunHarness Feishu commands:\n"
                 "/help - show this message\n"
+                "/new - start a new conversation session\n"
                 "/interrupt - stop the current local agent run\n\n"
                 "Send any other text to run FunHarness locally.",
                 message_id,
@@ -494,7 +507,12 @@ class FeishuGateway:
             return
 
         session = self._session_for(chat_id)
-        if text.strip().lower() in {"/interrupt", "interrupt", "stop"}:
+        cmd = text.strip().lower()
+        if cmd in NEW_SESSION_COMMANDS:
+            self.client.send_text(chat_id, session.new_session(), message_id)
+            return
+
+        if cmd in {"/interrupt", "interrupt", "stop"}:
             session.interrupt()
             self.client.send_text(chat_id, "Interrupt requested.", message_id)
             return

@@ -15,7 +15,7 @@ class SubAgent:
     just like the main agent. Without it, the subagent is text-only.
     """
 
-    _MAX_ITERATIONS = 25
+    _MAX_ITERATIONS = 60
 
     def __init__(
         self,
@@ -54,7 +54,6 @@ class SubAgent:
                 "model": self.model,
                 "messages": self.messages,
                 "temperature": 0.3,
-                "max_tokens": 4000,
                 "reasoning_effort": "high",
                 "extra_body": {"thinking": {"type": "enabled"}},
             }

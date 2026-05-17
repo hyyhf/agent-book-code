@@ -236,15 +236,6 @@ Keep this process running, then click Verify/Save in Feishu.
 
 FunHarness 会在本地执行，然后把状态、工具调用和最终结果发回飞书。
 
-### 群聊里使用
-
-把机器人拉进群，然后在群里 @ 机器人：
-
-```text
-@FunHarness 帮我阅读 README 并总结
-```
-
-群聊里通常需要 @ 机器人，飞书才会把消息事件发给应用。
 
 ### 常用命令
 

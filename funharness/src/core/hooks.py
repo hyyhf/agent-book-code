@@ -259,5 +259,5 @@ def init_middleware() -> MiddlewareChain:
     chain = MiddlewareChain()
     chain.add(LoopDetectionMiddleware(repeat_threshold=3))
     chain.add(SelfVerificationMiddleware(verify_interval=3))
-    chain.add(EnvironmentAwareMiddleware(max_iterations_warning=20))
+    chain.add(EnvironmentAwareMiddleware(max_iterations_warning=40))
     return chain
