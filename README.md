@@ -619,7 +619,7 @@ uv run fh weixin
 
 |                      飞书                      |                     QQ                      |                      微信                      |
 | :--------------------------------------------: | :-----------------------------------------: | :--------------------------------------------: |
-| <img src="assets/feishu_run_page_1.jpg" width="200" /> | <img src="assets/qqbot_runpage.jpg" width="200" /> | <img src="assets/weixinbot_runpage.jpg" width="200" /> |
+| <img src="assets/feishu_run_page_1.jpg" width="200" /> | <img src="assets/QQbot_runpage.jpg" width="200" /> | <img src="assets/weixinbot_runpage.jpg" width="200" /> |
 
 </div>
 
