@@ -161,6 +161,35 @@ class TeammateWorker:
             self.state.queue_depth = self._queue.qsize()
             return TeammateState(**self.state.__dict__)
 
+    def matches_config(self, *, role: str, instructions: str, model: str, llm_client: Any, tool_registry: Any) -> bool:
+        with self._lock:
+            return (
+                self.role == role
+                and self.instructions == instructions
+                and self.model == model
+                and self.llm_client is llm_client
+                and self.tool_registry is tool_registry
+            )
+
+    def reconfigure(self, *, role: str, instructions: str, model: str, llm_client: Any, tool_registry: Any) -> bool:
+        with self._lock:
+            if self._current_task is not None or self._queue.qsize():
+                return False
+            self.role = role
+            self.instructions = instructions
+            self.model = model
+            self.llm_client = llm_client
+            self.tool_registry = tool_registry
+            self._runner = self.runner_factory(
+                self.role,
+                self.instructions,
+                model=self.model,
+                llm_client=self.llm_client,
+                tool_registry=self.tool_registry,
+            )
+            self.state.last_active_at = time.time()
+            return True
+
     def _run(self) -> None:
         self._runner = self.runner_factory(
             self.role,
@@ -334,6 +363,20 @@ class TeammateRegistry:
         with self._lock:
             worker = self._workers.get(name)
             if worker and worker.is_alive():
+                if not worker.matches_config(
+                    role=member.role,
+                    instructions=member.instructions,
+                    model=model,
+                    llm_client=llm_client,
+                    tool_registry=tool_registry,
+                ):
+                    worker.reconfigure(
+                        role=member.role,
+                        instructions=member.instructions,
+                        model=model,
+                        llm_client=llm_client,
+                        tool_registry=tool_registry,
+                    )
                 return worker
             worker = TeammateWorker(
                 name=name,

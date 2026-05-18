@@ -3,7 +3,9 @@ FunHarness - Agent team run snapshots.
 """
 from __future__ import annotations
 
+import functools
 import json
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -187,6 +189,9 @@ class TeamRun:
     messages: list[TeamRunMessage] | None = None
     artifacts: list[TeamRunArtifact] | None = None
     timeline: list[dict[str, Any]] | None = None
+    next_task_number: int = 1
+    next_message_number: int = 1
+    next_artifact_number: int = 1
 
     def to_dict(self) -> dict:
         return {
@@ -202,10 +207,16 @@ class TeamRun:
             "messages": [item.to_dict() for item in self.messages or []],
             "artifacts": [item.to_dict() for item in self.artifacts or []],
             "timeline": list(self.timeline or []),
+            "next_task_number": self.next_task_number,
+            "next_message_number": self.next_message_number,
+            "next_artifact_number": self.next_artifact_number,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "TeamRun":
+        tasks = [TeamRunTask.from_dict(item) for item in data.get("tasks", [])]
+        messages = [TeamRunMessage.from_dict(item) for item in data.get("messages", [])]
+        artifacts = [TeamRunArtifact.from_dict(item) for item in data.get("artifacts", [])]
         return cls(
             run_id=data["run_id"],
             goal=data.get("goal", ""),
@@ -214,20 +225,33 @@ class TeamRun:
             started_at=float(data.get("started_at", 0.0)),
             finished_at=float(data.get("finished_at", 0.0)),
             agents=[TeamRunAgent.from_dict(item) for item in data.get("agents", [])],
-            tasks=[TeamRunTask.from_dict(item) for item in data.get("tasks", [])],
+            tasks=tasks,
             edges=[TeamRunEdge.from_dict(item) for item in data.get("edges", [])],
-            messages=[TeamRunMessage.from_dict(item) for item in data.get("messages", [])],
-            artifacts=[TeamRunArtifact.from_dict(item) for item in data.get("artifacts", [])],
+            messages=messages,
+            artifacts=artifacts,
             timeline=list(data.get("timeline", [])),
+            next_task_number=max(int(data.get("next_task_number") or 1), _next_number(tasks, "task_id", "TR")),
+            next_message_number=max(int(data.get("next_message_number") or 1), _next_number(messages, "message_id", "msg_")),
+            next_artifact_number=max(int(data.get("next_artifact_number") or 1), _next_number(artifacts, "artifact_id", "artifact_")),
         )
+
+
+def _with_lock(func):
+    @functools.wraps(func)
+    def wrapped(self, *args, **kwargs):
+        with self._lock:
+            return func(self, *args, **kwargs)
+    return wrapped
 
 
 class TeamRunManager:
     def __init__(self, root: str | Path = ".funharness/team_runs"):
         self.root = Path(root)
         self.index_path = self.root / "index.json"
+        self._lock = threading.RLock()
         self.root.mkdir(parents=True, exist_ok=True)
 
+    @_with_lock
     def start(self, goal: str, members: list[Any]) -> TeamRun:
         now = time.time()
         run = TeamRun(
@@ -253,6 +277,9 @@ class TeamRunManager:
             messages=[],
             artifacts=[],
             timeline=_default_timeline(now),
+            next_task_number=1,
+            next_message_number=1,
+            next_artifact_number=1,
         )
         for member in members:
             self.add_agent_to_run(run, member)
@@ -261,6 +288,7 @@ class TeamRunManager:
         self.record_message(run.run_id, "lead", "team", "Team run started.", "status")
         return self.get(run.run_id) or run
 
+    @_with_lock
     def current(self) -> TeamRun | None:
         try:
             data = json.loads(self.index_path.read_text(encoding="utf-8"))
@@ -269,6 +297,7 @@ class TeamRunManager:
         run_id = data.get("current_run_id", "")
         return self.get(run_id) if run_id else None
 
+    @_with_lock
     def get(self, run_id: str) -> TeamRun | None:
         path = self.root / f"{_safe_name(run_id)}.json"
         if not path.exists():
@@ -278,10 +307,12 @@ class TeamRunManager:
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             return None
 
+    @_with_lock
     def snapshot(self, run_id: str | None = None) -> dict | None:
         run = self.get(run_id) if run_id else self.current()
         return run.to_dict() if run else None
 
+    @_with_lock
     def add_agent(self, run_id: str, member: Any) -> TeamRun | None:
         run = self.get(run_id)
         if run is None:
@@ -290,6 +321,7 @@ class TeamRunManager:
         self._save(run)
         return run
 
+    @_with_lock
     def remove_agent(self, run_id: str, name: str) -> TeamRun | None:
         run = self.get(run_id)
         if run is None:
@@ -307,6 +339,7 @@ class TeamRunManager:
         self._save(run)
         return run
 
+    @_with_lock
     def rename_agent(self, run_id: str, old_name: str, new_name: str) -> TeamRun | None:
         run = self.get(run_id)
         if run is None:
@@ -368,6 +401,7 @@ class TeamRunManager:
         run.agents = agents
         self._upsert_edge(run, "lead", member.name, "assignment", "idle", "")
 
+    @_with_lock
     def assign_task(self, run_id: str, owner: str, title: str, description: str = "") -> str:
         run = self.get(run_id)
         if run is None:
@@ -380,7 +414,8 @@ class TeamRunManager:
                 item["status"] = "pending"
                 item["timestamp"] = 0.0
         tasks = run.tasks or []
-        task_id = f"TR{len(tasks) + 1}"
+        task_id = f"TR{run.next_task_number}"
+        run.next_task_number += 1
         tasks.append(TeamRunTask(
             task_id=task_id,
             title=title[:120],
@@ -400,6 +435,7 @@ class TeamRunManager:
         self.record_message(run_id, "lead", owner, title, "assignment")
         return task_id
 
+    @_with_lock
     def set_task_runtime(self, run_id: str, task_id: str, runtime_id: str) -> None:
         run = self.get(run_id)
         if run is None:
@@ -412,6 +448,7 @@ class TeamRunManager:
             self._update_agent(run, owner, runtime_id=runtime_id)
         self._save(run)
 
+    @_with_lock
     def update_task(
         self,
         run_id: str,
@@ -461,6 +498,7 @@ class TeamRunManager:
         self._save(run)
         return run
 
+    @_with_lock
     def update_agent(self, run_id: str, name: str, **updates: Any) -> TeamRun | None:
         run = self.get(run_id)
         if run is None:
@@ -472,6 +510,7 @@ class TeamRunManager:
         self._save(run)
         return run
 
+    @_with_lock
     def record_message(self, run_id: str, sender: str, to: str, content: str, edge_type: str = "message") -> TeamRun | None:
         run = self.get(run_id)
         if run is None:
@@ -479,7 +518,7 @@ class TeamRunManager:
         now = time.time()
         messages = run.messages or []
         messages.append(TeamRunMessage(
-            message_id=f"msg_{len(messages) + 1}",
+            message_id=f"msg_{run.next_message_number}",
             from_name=sender,
             to_name=to,
             kind=edge_type,
@@ -487,6 +526,7 @@ class TeamRunManager:
             edge_type=edge_type,
             timestamp=now,
         ))
+        run.next_message_number += 1
         run.messages = messages[-200:]
         if sender and to and to != "team":
             self._upsert_edge(run, sender, to, edge_type, "active", content)
@@ -494,6 +534,7 @@ class TeamRunManager:
         self._save(run)
         return run
 
+    @_with_lock
     def record_artifact(self, run_id: str, agent: str, title: str, content: str, runtime_id: str = "") -> TeamRun | None:
         run = self.get(run_id)
         if run is None:
@@ -501,19 +542,21 @@ class TeamRunManager:
         now = time.time()
         artifacts = run.artifacts or []
         artifacts.append(TeamRunArtifact(
-            artifact_id=f"artifact_{len(artifacts) + 1}",
+            artifact_id=f"artifact_{run.next_artifact_number}",
             agent=agent,
             title=title,
             content_preview=content[:1200],
             runtime_id=runtime_id,
             created_at=now,
         ))
+        run.next_artifact_number += 1
         run.artifacts = artifacts
         self._update_agent(run, agent, output=content)
         self._advance_timeline(run, "report", now)
         self._save(run)
         return run
 
+    @_with_lock
     def record_lead_feedback(self, run_id: str, agent: str, task: str, result: str) -> TeamRun | None:
         run = self.get(run_id)
         if run is None:
@@ -536,19 +579,20 @@ class TeamRunManager:
         )
         artifacts = run.artifacts or []
         artifacts.append(TeamRunArtifact(
-            artifact_id=f"artifact_{len(artifacts) + 1}",
+            artifact_id=f"artifact_{run.next_artifact_number}",
             agent="lead",
             title=f"Lead review for {agent}",
             content_preview=feedback[:1200],
             created_at=now,
         ))
+        run.next_artifact_number += 1
         run.artifacts = artifacts
         lead_status = "done" if run.status in {"done", "failed", "cancelled"} else "running"
         lead_progress = 100 if lead_status == "done" else max(45, next((item.progress for item in run.agents or [] if item.name == "lead"), 0))
         self._update_agent(run, "lead", status=lead_status, progress=lead_progress, current_task=f"Reviewed {agent} result", output=feedback)
         messages = run.messages or []
         messages.append(TeamRunMessage(
-            message_id=f"msg_{len(messages) + 1}",
+            message_id=f"msg_{run.next_message_number}",
             from_name="lead",
             to_name="team",
             kind="lead_feedback",
@@ -556,11 +600,33 @@ class TeamRunManager:
             edge_type="status",
             timestamp=now,
         ))
+        run.next_message_number += 1
         run.messages = messages[-200:]
         self._upsert_edge(run, agent, "lead", "report", "active", f"{agent} reported result")
         self._advance_timeline(run, "report", now)
         self._save(run)
         return run
+
+    @_with_lock
+    def finish_run(self, run_id: str, status: str = "done") -> TeamRun | None:
+        if status not in {"done", "failed", "cancelled"}:
+            raise ValueError(f"Unknown terminal run status: {status}")
+        run = self.get(run_id)
+        if run is None:
+            return None
+        run.status = status
+        run.finished_at = time.time()
+        lead_status = "done" if status == "done" else status
+        self._update_agent(run, "lead", status=lead_status, progress=100 if status == "done" else None)
+        for item in run.timeline or []:
+            if item.get("id") == "finish":
+                item["status"] = "done"
+                item["timestamp"] = run.finished_at
+            elif item.get("status") == "active":
+                item["status"] = "done"
+        self._save(run)
+        return run
+
     def _save_index(self, run_id: str) -> None:
         _write_text_atomic(self.index_path, json.dumps({"current_run_id": run_id}, indent=2))
 
@@ -629,7 +695,12 @@ class TeamRunManager:
     def _maybe_finish(self, run: TeamRun) -> None:
         agents = [agent for agent in run.agents or [] if agent.kind != "leader"]
         active_statuses = {"working", "running", "cancelling", "queued"}
+        terminal_statuses = {"done", "failed", "cancelled", "stopped"}
         if not agents or any(agent.status in active_statuses for agent in agents):
+            return
+        if any(task.status in {"pending", "in_progress"} for task in run.tasks or []):
+            return
+        if any(agent.status not in terminal_statuses for agent in agents):
             return
         if any(agent.status == "failed" for agent in agents):
             run.status = "failed"
@@ -650,6 +721,18 @@ class TeamRunManager:
 
 def _safe_name(name: str) -> str:
     return "".join(ch for ch in name.strip().lower() if ch.isalnum() or ch in ("-", "_"))
+
+
+def _next_number(items: list[Any], attr: str, prefix: str) -> int:
+    highest = 0
+    for item in items:
+        value = str(getattr(item, attr, ""))
+        if not value.startswith(prefix):
+            continue
+        suffix = value[len(prefix):]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return highest + 1
 
 
 def _write_text_atomic(path: Path, text: str) -> None:

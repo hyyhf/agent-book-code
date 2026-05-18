@@ -17,6 +17,14 @@ from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 def _find_env():
     """Walk up to find .env file."""
     candidates = [Path.cwd()]
+    workspace = os.getenv("FUNGUI_WORKSPACE", "").strip()
+    if workspace:
+        candidates.append(Path(workspace))
+    explicit_env = os.getenv("FUNGUI_ENV_FILE", "").strip()
+    if explicit_env:
+        env = Path(explicit_env).expanduser()
+        if env.exists():
+            return env
     if getattr(sys, "frozen", False):
         candidates.append(Path(sys.executable).resolve().parent)
     candidates.append(Path(__file__).resolve().parent)
@@ -36,7 +44,7 @@ def _find_env():
 
 _env = _find_env()
 if _env:
-    load_dotenv(_env)
+    load_dotenv(_env, encoding="utf-8-sig")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY") or "missing-api-key")
 MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")

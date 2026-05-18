@@ -113,6 +113,17 @@ class TeamManager:
         if not name:
             raise ValueError("Team member name is required")
         now = time.time()
+        existing = self._members.get(name)
+        if existing is not None:
+            existing.role = role or existing.role or "generalist"
+            existing.instructions = instructions
+            existing.last_active_at = now
+            self._save()
+            run = self.runs.current()
+            if run and run.status == "running":
+                updated = self.runs.update_agent(run.run_id, existing.name, role=existing.role)
+                self._emit("team_run_updated", {"run": updated.to_dict()} if updated else {})
+            return existing
         member = TeamMember(
             name=name,
             role=role or "generalist",
@@ -383,7 +394,8 @@ class TeamManager:
         self._append_history(name, task.task, result)
         self._apply_state(name, state, status="idle", current_task_id="")
         if task.run_id:
-            self.runs.record_artifact(task.run_id, name, f"{name} result", result, runtime_id=task.runtime_id)
+            artifact_title = f"{name} result"
+            self.runs.record_artifact(task.run_id, name, artifact_title, result, runtime_id=task.runtime_id)
             self.runs.record_message(task.run_id, name, "lead", result[:600], "report")
             updated = self.runs.update_agent(
                 task.run_id,
@@ -396,7 +408,7 @@ class TeamManager:
                 last_error="",
             )
             updated = self.runs.record_lead_feedback(task.run_id, name, task.task, result) or updated
-            self._emit("team_artifact", {"run": updated.to_dict()} if updated else {})
+            self._emit("team_artifact", {"run": updated.to_dict(), "agent": name, "title": artifact_title, "kind": "member_result"} if updated else {})
             self._emit("team_run_finished" if updated and updated.status in {"done", "failed", "cancelled"} else "team_run_updated", {"run": updated.to_dict()} if updated else {})
 
     def _on_worker_failed(self, name: str, task: TeammateQueueTask, error: str, state: TeammateState) -> None:

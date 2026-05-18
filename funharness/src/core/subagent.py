@@ -4,6 +4,9 @@ FunHarness - One-shot isolated subagents.
 from __future__ import annotations
 
 import json
+import time
+from threading import Event
+from typing import Callable
 
 from .llm import MODEL, client
 
@@ -16,6 +19,7 @@ class SubAgent:
     """
 
     _MAX_ITERATIONS = 60
+    _MAX_RUNTIME_SECONDS = 600
 
     def __init__(
         self,
@@ -41,25 +45,45 @@ class SubAgent:
             f"{extra}"
         )
 
-    def run(self, task: str, context: str = "") -> str:
+    def run(
+        self,
+        task: str,
+        context: str = "",
+        cancel_event: Event | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+        timeout_seconds: int | float | None = None,
+    ) -> str:
         content = task if not context else f"Context:\n{context}\n\nTask:\n{task}"
         self.messages.append({"role": "user", "content": content})
+        deadline = time.time() + float(self._MAX_RUNTIME_SECONDS if timeout_seconds is None else timeout_seconds)
 
         tools = None
         if self.tool_registry is not None:
             tools = self.tool_registry.get_openai_schemas() or None
 
         for _ in range(self._MAX_ITERATIONS):
+            if self._should_stop(cancel_event, should_cancel):
+                return "(subagent cancelled)"
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return "(subagent timed out)"
             kwargs = {
                 "model": self.model,
                 "messages": self.messages,
                 "temperature": 0.3,
                 "reasoning_effort": "high",
                 "extra_body": {"thinking": {"type": "enabled"}},
+                "timeout": min(60, remaining),
             }
             if tools:
                 kwargs["tools"] = tools
-            response = self.llm_client.chat.completions.create(**kwargs)
+            try:
+                response = self.llm_client.chat.completions.create(**kwargs)
+            except TypeError:
+                kwargs.pop("timeout", None)
+                response = self.llm_client.chat.completions.create(**kwargs)
+            if self._should_stop(cancel_event, should_cancel):
+                return "(subagent cancelled)"
             choice = response.choices[0]
             msg = choice.message
 
@@ -85,6 +109,10 @@ class SubAgent:
                 return msg.content or ""
 
             for tc in msg.tool_calls:
+                if self._should_stop(cancel_event, should_cancel):
+                    return "(subagent cancelled)"
+                if time.time() >= deadline:
+                    return "(subagent timed out)"
                 tool_name = tc.function.name
                 try:
                     args = json.loads(tc.function.arguments)
@@ -113,3 +141,9 @@ class SubAgent:
                 last_content = message["content"]
                 break
         return last_content or "(subagent reached max iterations)"
+
+    @staticmethod
+    def _should_stop(cancel_event: Event | None, should_cancel: Callable[[], bool] | None) -> bool:
+        if cancel_event is not None and cancel_event.is_set():
+            return True
+        return bool(should_cancel and should_cancel())

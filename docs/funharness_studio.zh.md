@@ -137,7 +137,25 @@ Studio 把这些后台任务展示成可观察的面板：学生可以看到任�
 
 ![会话历史与回放](images/studio_session_replay.png)
 
-### 7. 模型与运行设置
+### 7. 桌面宠物
+
+Studio 内置了一个轻量的「桌面宠物」功能。用户可以在左侧导航栏打开宠物面板，从 Petdex 社区精选图鉴中挑选喜欢的像素宠物，也可以上传自定义 Sprite Sheet。选中的宠物会以动画形式悬浮在界面角落，并根据 Agent 的运行状态自动切换动作：
+
+- **启动（start）**：收到 `run_started` 或 `assistant_delta` 时，宠物播放启动动画。
+- **思考（think）**：Agent 进入推理阶段（`reasoning_start` / `reasoning_delta`），宠物切换为思考姿态。
+- **等待（waiting）**：工具代码正在生成中（`tool_gen_delta`），宠物进入等待状态。
+- **奔跑（run）**：工具调用执行中（`tool_call`），宠物奔跑起来。
+- **跳跃（jump）**：工具返回结果（`tool_result`）或任务完成（`task_completed`）时，宠物跳跃庆祝。
+- **审视（review）**：需要用户审批（`approval_requested`）时，宠物进入审视状态。
+- **失败（failed）**：遇到错误（`error`）时，宠物表现出沮丧。
+- **挥手（wave）**：Agent 连接成功或运行结束（`connected` / `run_finished`）时，宠物友好地挥手致意，随后回到待机。
+
+宠物面板还提供显示开关、位置（左下 / 右下）和大小（小 / 中 / 大）等偏好设置，所有配置持久化到工作目录的 `pets/` 文件夹中。
+
+<!-- TODO: 补充桌面宠物截图 -->
+![桌面宠物](images/pets.png)
+
+### 8. 模型与运行设置
 
 Studio 提供设置面板，用于管理模型配置、后端连接、工作区信息和运行模式。对学生来说，这比直接修改 `.env` 更容易理解；对教师来说，也更方便统一演示不同模型配置对 Agent 行为的影响。
 
