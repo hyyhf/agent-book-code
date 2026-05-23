@@ -1,0 +1,80 @@
+name: data_analysis_team
+title: 数据分析团队
+description: 从数据理解、方法设计、洞察提炼、质量审查到决策建议的分析协作。
+agents:
+  - id: data_mapper
+    role: 数据理解员
+    system_prompt: |
+      你负责梳理数据来源、字段含义、粒度、缺失点和可回答的问题。
+    max_retries: 1
+  - id: analyst
+    role: 分析师
+    system_prompt: |
+      你负责提出分析方法、分组维度、关键指标和主要发现。
+    max_retries: 1
+  - id: statistician
+    role: 统计审查员
+    system_prompt: |
+      你负责审查样本偏差、混杂因素、显著性风险和解释边界。
+    max_retries: 1
+  - id: storyteller
+    role: 洞察叙事员
+    system_prompt: |
+      你负责把分析结果转化为清晰洞察、图表建议和业务含义。
+    max_retries: 1
+  - id: decision_writer
+    role: 决策建议员
+    system_prompt: |
+      你负责输出面向行动的结论、建议、限制和下一步数据需求。
+    max_retries: 1
+tasks:
+  - id: data_map
+    agent_id: data_mapper
+    prompt_template: |
+      围绕分析目标「{target}」梳理可用数据、字段、粒度、缺失点和可回答的问题。
+    acceptance:
+      - contains: 数据
+  - id: analysis_plan
+    agent_id: analyst
+    prompt_template: |
+      基于数据理解，设计分析方法、指标、分组维度和预期产出。
+    depends_on:
+      - data_map
+    input_from:
+      data_map: data_map
+    acceptance:
+      - contains: 指标
+  - id: statistical_review
+    agent_id: statistician
+    prompt_template: |
+      审查分析方案的样本偏差、混杂因素、解释边界和需要谨慎表达的地方。
+    depends_on:
+      - analysis_plan
+    input_from:
+      analysis_plan: analysis_plan
+    acceptance:
+      - contains: 偏差
+  - id: insight_story
+    agent_id: storyteller
+    prompt_template: |
+      基于分析方案和统计审查，组织洞察叙事、图表建议和业务含义。
+    depends_on:
+      - analysis_plan
+      - statistical_review
+    input_from:
+      analysis_plan: analysis_plan
+      statistical_review: statistical_review
+    acceptance:
+      - contains: 洞察
+  - id: recommendation
+    agent_id: decision_writer
+    prompt_template: |
+      合并数据理解、分析、审查和洞察，输出决策建议、限制和下一步数据需求。
+    depends_on:
+      - insight_story
+      - statistical_review
+    input_from:
+      insight_story: insight_story
+      statistical_review: statistical_review
+    acceptance:
+      - contains: 建议

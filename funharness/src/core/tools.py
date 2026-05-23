@@ -93,6 +93,8 @@ class ToolRegistry:
                 prop = _schema_for_type(ptype)
                 if pname in param_docs:
                     prop["description"] = param_docs[pname]
+                if param.default is not inspect.Parameter.empty:
+                    prop["default"] = param.default
                 properties[pname] = prop
                 if param.default is inspect.Parameter.empty:
                     required.append(pname)

@@ -1,0 +1,84 @@
+name: incident_response_team
+title: 故障响应团队
+description: 用于线上故障、异常行为或复杂问题的分诊、根因分析、修复和复盘。
+agents:
+  - id: triage
+    role: 分诊负责人
+    system_prompt: |
+      你负责界定影响范围、症状、优先级、已知事实和立即止血动作。
+    max_retries: 1
+  - id: investigator
+    role: 根因调查员
+    system_prompt: |
+      你负责提出可能根因、证据链、排查顺序和需要补充的观测点。
+    max_retries: 1
+  - id: mitigator
+    role: 修复负责人
+    system_prompt: |
+      你负责提出短期缓解、长期修复、风险和回滚条件。
+    max_retries: 1
+  - id: communicator
+    role: 沟通负责人
+    system_prompt: |
+      你负责整理面向用户、团队和管理者的沟通口径。
+    max_retries: 1
+  - id: postmortem
+    role: 复盘作者
+    system_prompt: |
+      你负责合并事实、根因、处置过程和预防动作，输出复盘报告。
+    max_retries: 1
+tasks:
+  - id: triage
+    agent_id: triage
+    prompt_template: |
+      对故障或问题「{target}」做分诊：影响范围、严重度、已知事实、未知点和立即止血动作。
+    acceptance:
+      - contains: 影响范围
+  - id: root_cause
+    agent_id: investigator
+    prompt_template: |
+      基于分诊结果，提出可能根因、证据链、排查顺序和需要补充的日志或指标。
+    depends_on:
+      - triage
+    input_from:
+      triage: triage
+    acceptance:
+      - contains: 根因
+  - id: mitigation
+    agent_id: mitigator
+    prompt_template: |
+      基于分诊和根因假设，提出短期缓解、长期修复、验证步骤和回滚条件。
+    depends_on:
+      - triage
+      - root_cause
+    input_from:
+      triage: triage
+      root_cause: root_cause
+    acceptance:
+      - contains: 修复
+  - id: communication
+    agent_id: communicator
+    prompt_template: |
+      基于当前事实和修复计划，准备用户、团队和管理者三类沟通口径。
+    depends_on:
+      - triage
+      - mitigation
+    input_from:
+      triage: triage
+      mitigation: mitigation
+    acceptance:
+      - contains: 沟通
+  - id: postmortem
+    agent_id: postmortem
+    prompt_template: |
+      合并故障分诊、根因、修复和沟通结果，输出复盘报告和预防动作。
+    depends_on:
+      - root_cause
+      - mitigation
+      - communication
+    input_from:
+      root_cause: root_cause
+      mitigation: mitigation
+      communication: communication
+    acceptance:
+      - contains: 复盘

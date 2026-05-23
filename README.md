@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v0.1.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.1.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v0.2.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.2.0)（暂支持 Windows 系统）
 
 <h2>FunHarness：从终端到图形化教学工作台</h2>
 
@@ -249,6 +249,10 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
+> - **2026-05-23 —— 新增 Swarm 多智能体协作系统：**
+>   - 全新 `swarm/` 模块，支持**静态 DAG 任务编排 + 共享黑板（Blackboard）**：多个 Agent 角色按依赖关系自动分层并发执行，Worker 之间通过黑板发布和读取共享发现，实现跨任务知识传递。
+>   - 内置 **9 套 YAML Preset 协作模板**（研究、代码审查、辩论、数据分析等）一键启动；同时支持**自适应组队、辩论模式、渐进式精化**等高级编排，以及质量审计自动重试、动态子任务派生和跨轮学习记忆。
+>   - **FunHarness Studio 可视化**：GUI 新增 Swarm 面板，以交互式 DAG 拓扑图展示任务节点状态、Agent 活动气泡、黑板消息弹窗和实时进度条；所有状态持久化到 `.funharness/swarm/` 目录，可随时断点恢复或离线审查。
 > - **2026-05-19 —— 新增桌面宠物功能：**
 >   - 左侧导航栏新增「宠物」面板，可从 [Petdex 社区精选图鉴](https://petdex.crafter.run/zh) 添加像素宠物，也可上传自定义 Sprite Sheet。
 >   - 宠物以动画形式悬浮在界面角落，根据 Agent 运行状态（启动、思考、工具调用、完成、失败、审批等）自动切换动作。

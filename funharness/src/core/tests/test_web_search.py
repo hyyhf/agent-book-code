@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
+from urllib.error import URLError
 from unittest.mock import patch
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
@@ -120,7 +123,96 @@ class FakeStealthyFetcher:
 
 
 class WebSearchToolTests(unittest.TestCase):
-    def test_tavily_payload_omits_images_and_favicons_for_speed(self) -> None:
+    def test_anysearch_is_primary_search_provider(self) -> None:
+        captured = {}
+        response = {
+            "results": [
+                {
+                    "title": "Title",
+                    "url": "https://example.com/page",
+                    "description": "Short summary",
+                    "content": "Longer body",
+                    "score": 0.91,
+                    "quality_score": 0.98,
+                    "source": "web",
+                    "raw_content": "Raw body",
+                }
+            ],
+            "metadata": {"request_id": "req_test"},
+        }
+
+        def fake_urlopen(request, timeout=0):
+            captured["url"] = request.full_url
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            captured["authorization"] = request.get_header("Authorization")
+            return FakeResponse(response)
+
+        with patch.dict(os.environ, {"ANYSEARCH_API_KEY": "any-key"}, clear=False):
+            with patch("funharness.src.core.webtools.search.urlopen", fake_urlopen):
+                result = tool_web_search("jay")
+
+        self.assertIsInstance(result, ToolResult)
+        self.assertEqual(captured["url"], "https://api.anysearch.com/v1/search")
+        self.assertEqual(captured["payload"], {"query": "jay", "max_results": 6})
+        self.assertEqual(captured["authorization"], "Bearer any-key")
+        self.assertIn("1. [Title](https://example.com/page)", result.content)
+        self.assertIn("Short summary", result.content)
+        self.assertEqual(result.display["provider"], "anysearch")
+        self.assertEqual(result.display["images"], [])
+        self.assertNotIn("raw_content", result.display["results"][0])
+        self.assertNotIn("source", result.display["results"][0])
+
+    def test_web_search_accepts_custom_max_results(self) -> None:
+        captured = {}
+        response = {"results": []}
+
+        def fake_urlopen(request, timeout=0):
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return FakeResponse(response)
+
+        with patch.dict(os.environ, {"ANYSEARCH_API_KEY": "any-key"}, clear=False):
+            with patch("funharness.src.core.webtools.search.urlopen", fake_urlopen):
+                result = tool_web_search("jay", max_results=12)
+
+        self.assertIsInstance(result, ToolResult)
+        self.assertEqual(captured["payload"]["max_results"], 12)
+
+    def test_web_search_uses_saved_gui_search_key_before_env(self) -> None:
+        captured = {}
+
+        def fake_urlopen(request, timeout=0):
+            captured["authorization"] = request.get_header("Authorization")
+            return FakeResponse({"results": []})
+
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dir = Path(tmp) / ".funharness"
+            config_dir.mkdir()
+            (config_dir / "search_providers.json").write_text(
+                json.dumps({"anysearch_api_key": "settings-key"}),
+                encoding="utf-8",
+            )
+            os.chdir(tmp)
+            try:
+                with patch.dict(os.environ, {"ANYSEARCH_API_KEY": "env-key"}, clear=False):
+                    with patch("funharness.src.core.webtools.search.urlopen", fake_urlopen):
+                        result = tool_web_search("jay")
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertIsInstance(result, ToolResult)
+        self.assertEqual(captured["authorization"], "Bearer settings-key")
+
+    def test_web_search_schema_marks_max_results_as_optional_default(self) -> None:
+        schema = registry.get_schema("tool_web_search")
+        params = schema["function"]["parameters"]
+        max_results = params["properties"]["max_results"]
+
+        self.assertEqual(params["required"], ["query"])
+        self.assertEqual(max_results["default"], 6)
+        self.assertIn("omit unless the user asks", max_results["description"])
+
+    def test_tavily_fallback_payload_omits_images_and_favicons_for_speed(self) -> None:
         captured = {}
         response = {
             "query": "jay",
@@ -138,21 +230,87 @@ class WebSearchToolTests(unittest.TestCase):
         }
 
         def fake_urlopen(request, timeout=0):
+            if request.full_url == "https://api.anysearch.com/v1/search":
+                raise URLError("anysearch unavailable")
             captured["payload"] = json.loads(request.data.decode("utf-8"))
             return FakeResponse(response)
 
-        with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
+        with patch.dict(os.environ, {"ANYSEARCH_API_KEY": "any-key", "TAVILY_API_KEY": "test-key"}):
             with patch("funharness.src.core.webtools.search.urlopen", fake_urlopen):
                 result = tool_web_search("jay")
 
         self.assertIsInstance(result, ToolResult)
+        self.assertEqual(captured["payload"]["api_key"], "test-key")
+        self.assertEqual(captured["payload"]["max_results"], 6)
         self.assertNotIn("include_images", captured["payload"])
         self.assertNotIn("include_favicon", captured["payload"])
         self.assertIn("1. [Title](https://example.com/page)", result.content)
         self.assertIn("Snippet", result.content)
+        self.assertEqual(result.display["provider"], "tavily")
+        self.assertEqual(result.display["fallbacks"], [{"provider": "anysearch", "error": "anysearch unavailable"}])
         self.assertEqual(result.display["images"], [])
         self.assertNotIn("favicon", result.display["results"][0])
         self.assertNotIn("images", result.display["results"][0])
+        self.assertIn("Search provider fallback used", result.content)
+        self.assertIn("AnySearch: anysearch unavailable", result.content)
+
+    def test_anysearch_unexpected_response_reports_error_fields(self) -> None:
+        response_by_url = {
+            "https://api.anysearch.com/v1/search": {
+                "symbol": "invalid_api_key",
+                "code": 40101,
+                "message": "Invalid API key",
+                "request_id": "req_test",
+            },
+            "https://api.tavily.com/search": {
+                "query": "jay",
+                "results": [{"title": "Fallback", "url": "https://example.com", "content": "Snippet"}],
+            },
+        }
+
+        def fake_urlopen(request, timeout=0):
+            return FakeResponse(response_by_url[request.full_url])
+
+        with patch.dict(os.environ, {"ANYSEARCH_API_KEY": "bad-key", "TAVILY_API_KEY": "test-key"}):
+            with patch("funharness.src.core.webtools.search.urlopen", fake_urlopen):
+                result = tool_web_search("jay")
+
+        self.assertEqual(result.display["provider"], "tavily")
+        self.assertIn("invalid_api_key", result.display["fallbacks"][0]["error"])
+        self.assertIn("Invalid API key", result.display["fallbacks"][0]["error"])
+        self.assertIn("req_test", result.display["fallbacks"][0]["error"])
+
+    def test_web_search_reports_both_provider_failures(self) -> None:
+        def fake_urlopen(request, timeout=0):
+            raise URLError("network down")
+
+        with patch.dict(os.environ, {"ANYSEARCH_API_KEY": "any-key", "TAVILY_API_KEY": "test-key"}):
+            with patch("funharness.src.core.webtools.search.urlopen", fake_urlopen):
+                result = tool_web_search("jay")
+
+        self.assertIn("Web search failed:", result)
+        self.assertIn("AnySearch: network down", result)
+        self.assertIn("Tavily: network down", result)
+
+    def test_web_search_timeout_message_points_to_network_configuration(self) -> None:
+        captured = {}
+
+        def fake_urlopen(request, timeout=0):
+            captured["timeout"] = timeout
+            raise TimeoutError("_ssl.c:993: The handshake operation timed out")
+
+        with patch.dict(os.environ, {"FUNHARNESS_WEB_SEARCH_TIMEOUT": "45", "ANYSEARCH_API_KEY": "any-key"}):
+            with patch("funharness.src.core.webtools.search.urlopen", fake_urlopen):
+                result = tool_web_search("jay")
+
+        self.assertEqual(captured["timeout"], 45.0)
+        self.assertIn("network timeout after 45s", result)
+        self.assertIn("HTTPS_PROXY/HTTP_PROXY", result)
+
+    def test_web_search_rejects_invalid_max_results(self) -> None:
+        result = tool_web_search("jay", max_results=0)
+
+        self.assertIn("max_results must be from 1 to 100", result)
 
     def test_agent_keeps_web_search_display_out_of_tool_context(self) -> None:
         agent = FunHarnessAgent(mode="auto")

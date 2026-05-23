@@ -1,0 +1,44 @@
+name: code_review_team
+title: 代码评审团队
+description: 分析风险、测试缺口并综合评审意见。
+agents:
+  - id: reviewer
+    role: 代码评审员
+    system_prompt: |
+      你优先发现 bug、回归风险、边界条件和缺失测试。
+    max_retries: 1
+  - id: tester
+    role: 测试策略员
+    system_prompt: |
+      你负责提出最小但有效的验证策略，关注失败路径和回归覆盖。
+    max_retries: 1
+  - id: summary
+    role: 评审总结员
+    system_prompt: |
+      你负责合并评审和测试建议，输出按严重程度排序的结论。
+    max_retries: 1
+tasks:
+  - id: review
+    agent_id: reviewer
+    prompt_template: |
+      对以下代码或改动做风险评审：{target}
+    acceptance:
+      - contains: 风险
+  - id: test_plan
+    agent_id: tester
+    prompt_template: |
+      为以下代码或改动设计验证方案：{target}
+    acceptance:
+      - contains: 验证
+  - id: final_review
+    agent_id: summary
+    prompt_template: |
+      合并代码评审和测试计划，输出最终评审意见。
+    depends_on:
+      - review
+      - test_plan
+    input_from:
+      review: review
+      test_plan: test_plan
+    acceptance:
+      - contains: 最终评审

@@ -1,0 +1,82 @@
+name: implementation_delivery_team
+title: 工程交付团队
+description: 从架构、前端、后端、测试和发布角度制定可执行交付方案。
+agents:
+  - id: architect
+    role: 架构师
+    system_prompt: |
+      你负责拆分技术边界、模块职责、数据流和最小可行实现路径。
+    max_retries: 1
+  - id: frontend
+    role: 前端工程师
+    system_prompt: |
+      你负责界面状态、交互流程、组件边界和前端风险。
+    max_retries: 1
+  - id: backend
+    role: 后端工程师
+    system_prompt: |
+      你负责 API、数据模型、持久化、错误处理和兼容性。
+    max_retries: 1
+  - id: qa
+    role: 测试工程师
+    system_prompt: |
+      你负责验证策略、关键测试、回归风险和验收标准。
+    max_retries: 1
+  - id: release
+    role: 发布负责人
+    system_prompt: |
+      你负责把工程方案转化为交付顺序、发布检查项和回滚方案。
+    max_retries: 1
+tasks:
+  - id: architecture
+    agent_id: architect
+    prompt_template: |
+      为工程目标「{goal}」设计最小可行架构、模块边界、数据流和实施顺序。
+    acceptance:
+      - contains: 架构
+  - id: frontend_plan
+    agent_id: frontend
+    prompt_template: |
+      基于架构方案，规划前端界面、状态、组件和交互改动。
+    depends_on:
+      - architecture
+    input_from:
+      architecture: architecture
+    acceptance:
+      - contains: 前端
+  - id: backend_plan
+    agent_id: backend
+    prompt_template: |
+      基于架构方案，规划后端 API、数据模型、持久化和兼容性改动。
+    depends_on:
+      - architecture
+    input_from:
+      architecture: architecture
+    acceptance:
+      - contains: 后端
+  - id: test_strategy
+    agent_id: qa
+    prompt_template: |
+      基于前后端方案，设计验证步骤、关键测试、回归覆盖和失败路径检查。
+    depends_on:
+      - frontend_plan
+      - backend_plan
+    input_from:
+      frontend: frontend_plan
+      backend: backend_plan
+    acceptance:
+      - contains: 验证
+  - id: delivery_plan
+    agent_id: release
+    prompt_template: |
+      合并工程方案和测试策略，输出可执行交付计划、发布检查项和回滚建议。
+    depends_on:
+      - frontend_plan
+      - backend_plan
+      - test_strategy
+    input_from:
+      frontend: frontend_plan
+      backend: backend_plan
+      test: test_strategy
+    acceptance:
+      - contains: 交付计划

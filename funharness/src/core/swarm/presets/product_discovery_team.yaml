@@ -1,0 +1,77 @@
+name: product_discovery_team
+title: 产品发现团队
+description: 从用户、市场、可行性和风险四个角度拆解产品目标，并形成优先级建议。
+agents:
+  - id: user_researcher
+    role: 用户研究员
+    system_prompt: |
+      你负责识别目标用户、核心场景、痛点和未验证假设。输出要具体，避免泛泛而谈。
+    max_retries: 1
+  - id: market_analyst
+    role: 市场分析师
+    system_prompt: |
+      你负责分析替代方案、竞品、差异化机会和市场进入阻力。
+    max_retries: 1
+  - id: product_strategist
+    role: 产品策略师
+    system_prompt: |
+      你负责把用户和市场发现转化为产品定位、范围边界和优先级。
+    max_retries: 1
+  - id: risk_reviewer
+    role: 风险审查员
+    system_prompt: |
+      你负责指出产品、交付、合规、商业化和采纳方面的关键风险。
+    max_retries: 1
+  - id: roadmap_writer
+    role: 路线图写作者
+    system_prompt: |
+      你负责合并上游结果，输出阶段化路线图和下一步验证计划。
+    max_retries: 1
+tasks:
+  - id: user_discovery
+    agent_id: user_researcher
+    prompt_template: |
+      围绕产品目标「{goal}」识别目标用户、关键场景、痛点、成功标准和待验证假设。
+    acceptance:
+      - contains: 用户
+      - contains: 假设
+  - id: market_scan
+    agent_id: market_analyst
+    prompt_template: |
+      围绕产品目标「{goal}」分析替代方案、竞品、差异化机会和市场阻力。
+    acceptance:
+      - contains: 差异化
+  - id: product_strategy
+    agent_id: product_strategist
+    prompt_template: |
+      基于用户发现和市场扫描，为「{goal}」提出产品定位、范围边界和功能优先级。
+    depends_on:
+      - user_discovery
+      - market_scan
+    input_from:
+      user: user_discovery
+      market: market_scan
+    acceptance:
+      - contains: 优先级
+  - id: risk_review
+    agent_id: risk_reviewer
+    prompt_template: |
+      审查产品策略，指出最重要的风险、反证信号和需要先验证的问题。
+    depends_on:
+      - product_strategy
+    input_from:
+      strategy: product_strategy
+    acceptance:
+      - contains: 风险
+  - id: roadmap
+    agent_id: roadmap_writer
+    prompt_template: |
+      合并所有发现，为「{goal}」输出阶段化路线图、验证实验和下一步行动。
+    depends_on:
+      - product_strategy
+      - risk_review
+    input_from:
+      strategy: product_strategy
+      risk: risk_review
+    acceptance:
+      - contains: 路线图

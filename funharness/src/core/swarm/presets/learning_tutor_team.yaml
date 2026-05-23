@@ -1,0 +1,80 @@
+name: learning_tutor_team
+title: 学习辅导团队
+description: 为复杂主题设计诊断、讲解、练习、纠错和学习路径。
+agents:
+  - id: diagnostician
+    role: 学情诊断员
+    system_prompt: |
+      你负责判断学习目标的先修知识、常见误区、难点和诊断问题。
+    max_retries: 1
+  - id: explainer
+    role: 概念讲解员
+    system_prompt: |
+      你负责用层次化方式解释概念，并给出类比和关键例子。
+    max_retries: 1
+  - id: exercise_designer
+    role: 练习设计师
+    system_prompt: |
+      你负责设计递进练习、提示、参考答案和检查点。
+    max_retries: 1
+  - id: misconception_checker
+    role: 误区检查员
+    system_prompt: |
+      你负责识别学习者容易误解的地方，并提供纠错策略。
+    max_retries: 1
+  - id: coach
+    role: 学习教练
+    system_prompt: |
+      你负责合并讲解、练习和纠错，输出可执行学习计划。
+    max_retries: 1
+tasks:
+  - id: diagnose
+    agent_id: diagnostician
+    prompt_template: |
+      围绕学习目标「{goal}」分析先修知识、难点、常见误区和诊断问题。
+    acceptance:
+      - contains: 难点
+  - id: explanation
+    agent_id: explainer
+    prompt_template: |
+      基于学情诊断，设计层次化概念讲解、类比和关键例子。
+    depends_on:
+      - diagnose
+    input_from:
+      diagnose: diagnose
+    acceptance:
+      - contains: 讲解
+  - id: exercises
+    agent_id: exercise_designer
+    prompt_template: |
+      基于讲解内容，设计递进练习、提示、参考答案和检查点。
+    depends_on:
+      - explanation
+    input_from:
+      explanation: explanation
+    acceptance:
+      - contains: 练习
+  - id: misconception_review
+    agent_id: misconception_checker
+    prompt_template: |
+      审查讲解和练习，指出容易误解的地方、纠错提示和补充例子。
+    depends_on:
+      - explanation
+      - exercises
+    input_from:
+      explanation: explanation
+      exercises: exercises
+    acceptance:
+      - contains: 误区
+  - id: learning_plan
+    agent_id: coach
+    prompt_template: |
+      合并诊断、讲解、练习和误区审查，输出「{goal}」的学习路径和执行计划。
+    depends_on:
+      - exercises
+      - misconception_review
+    input_from:
+      exercises: exercises
+      misconception_review: misconception_review
+    acceptance:
+      - contains: 学习计划

@@ -1,0 +1,44 @@
+name: debate_team
+title: 辩论团队
+description: 正反双方提出论点，裁判综合判断。
+agents:
+  - id: pro
+    role: 正方
+    system_prompt: |
+      你负责提出支持该观点的最强论据，并承认证据边界。
+    max_retries: 1
+  - id: con
+    role: 反方
+    system_prompt: |
+      你负责提出反对该观点的最强论据，并指出潜在代价。
+    max_retries: 1
+  - id: judge
+    role: 裁判
+    system_prompt: |
+      你负责比较双方论据，给出平衡、可执行的判断。
+    max_retries: 1
+tasks:
+  - id: pro_case
+    agent_id: pro
+    prompt_template: |
+      为命题「{motion}」提出支持观点，包含至少三个论据。
+    acceptance:
+      - contains: 论据
+  - id: con_case
+    agent_id: con
+    prompt_template: |
+      为命题「{motion}」提出反对观点，包含至少三个论据。
+    acceptance:
+      - contains: 论据
+  - id: judgment
+    agent_id: judge
+    prompt_template: |
+      基于正反双方论点，对命题「{motion}」做最终判断。
+    depends_on:
+      - pro_case
+      - con_case
+    input_from:
+      正方: pro_case
+      反方: con_case
+    acceptance:
+      - contains: 最终判断

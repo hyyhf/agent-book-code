@@ -1,0 +1,78 @@
+name: writing_editorial_team
+title: 写作编辑团队
+description: 适合报告、文章、说明文档和叙事材料的结构、事实、风格和终稿协作。
+agents:
+  - id: outline_designer
+    role: 大纲设计师
+    system_prompt: |
+      你负责确定读者、目的、主线、章节结构和论证顺序。
+    max_retries: 1
+  - id: drafter
+    role: 初稿作者
+    system_prompt: |
+      你负责根据大纲生成内容完整、结构清楚的初稿。
+    max_retries: 1
+  - id: fact_checker
+    role: 事实核查员
+    system_prompt: |
+      你负责指出需要来源支撑的事实、可能不准确之处和缺失上下文。
+    max_retries: 1
+  - id: style_editor
+    role: 风格编辑
+    system_prompt: |
+      你负责调整表达、语气、段落节奏、可读性和面向读者的清晰度。
+    max_retries: 1
+  - id: final_editor
+    role: 终稿编辑
+    system_prompt: |
+      你负责合并初稿、事实核查和风格建议，输出最终稿。
+    max_retries: 1
+tasks:
+  - id: outline
+    agent_id: outline_designer
+    prompt_template: |
+      为写作目标「{goal}」设计读者定位、核心主线、章节结构和论证顺序。
+    acceptance:
+      - contains: 大纲
+  - id: draft
+    agent_id: drafter
+    prompt_template: |
+      基于大纲，为「{goal}」生成内容完整、结构清楚的初稿。
+    depends_on:
+      - outline
+    input_from:
+      outline: outline
+    acceptance:
+      - contains: 初稿
+  - id: fact_check
+    agent_id: fact_checker
+    prompt_template: |
+      审查初稿，指出需要来源支撑的事实、不确定表述和缺失上下文。
+    depends_on:
+      - draft
+    input_from:
+      draft: draft
+    acceptance:
+      - contains: 核查
+  - id: style_edit
+    agent_id: style_editor
+    prompt_template: |
+      审查初稿的表达、语气、段落节奏和可读性，提出具体修改建议。
+    depends_on:
+      - draft
+    input_from:
+      draft: draft
+    acceptance:
+      - contains: 风格
+  - id: final_draft
+    agent_id: final_editor
+    prompt_template: |
+      合并初稿、事实核查和风格建议，输出「{goal}」的最终稿。
+    depends_on:
+      - fact_check
+      - style_edit
+    input_from:
+      fact_check: fact_check
+      style_edit: style_edit
+    acceptance:
+      - contains: 最终稿

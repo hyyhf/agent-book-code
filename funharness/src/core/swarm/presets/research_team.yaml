@@ -1,0 +1,51 @@
+name: research_team
+title: 通用研究团队
+description: 多角色研究、核查与综合输出。
+agents:
+  - id: researcher
+    role: 研究员
+    system_prompt: |
+      你负责收集关键事实、形成结构化研究笔记，并把重要发现发布到黑板。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
+    max_retries: 1
+  - id: critic
+    role: 质检员
+    system_prompt: |
+      你负责审查研究员的结论，指出证据不足、逻辑跳跃和需要补充的问题。
+    max_retries: 1
+  - id: synthesizer
+    role: 综合写作者
+    system_prompt: |
+      你负责基于上游结果和黑板信息输出最终答案，避免引入无来源的新事实。
+    max_retries: 1
+tasks:
+  - id: research
+    agent_id: researcher
+    prompt_template: |
+      围绕主题「{topic}」做一轮事实研究，输出关键发现、证据和不确定点。
+    acceptance:
+      - contains: 关键发现
+  - id: critique
+    agent_id: critic
+    prompt_template: |
+      审查上游研究结果，指出最重要的风险、遗漏和需要澄清的地方。
+    depends_on:
+      - research
+    input_from:
+      research: research
+    acceptance:
+      - contains: 风险
+  - id: synthesize
+    agent_id: synthesizer
+    prompt_template: |
+      基于研究和质检结果，为「{topic}」输出一份清晰、可执行的最终报告。
+    depends_on:
+      - research
+      - critique
+    input_from:
+      research: research
+      critique: critique
+    acceptance:
+      - contains: 最终报告
