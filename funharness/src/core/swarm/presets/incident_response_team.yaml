@@ -6,26 +6,50 @@ agents:
     role: 分诊负责人
     system_prompt: |
       你负责界定影响范围、症状、优先级、已知事实和立即止血动作。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
+      - tool_read_file
+      - tool_grep_search
+      - tool_list_directory
     max_retries: 1
   - id: investigator
     role: 根因调查员
     system_prompt: |
       你负责提出可能根因、证据链、排查顺序和需要补充的观测点。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
+      - tool_read_file
+      - tool_grep_search
+      - tool_list_directory
     max_retries: 1
   - id: mitigator
     role: 修复负责人
     system_prompt: |
       你负责提出短期缓解、长期修复、风险和回滚条件。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
+      - tool_read_file
+      - tool_grep_search
+      - tool_list_directory
     max_retries: 1
   - id: communicator
     role: 沟通负责人
     system_prompt: |
       你负责整理面向用户、团队和管理者的沟通口径。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: postmortem
     role: 复盘作者
     system_prompt: |
       你负责合并事实、根因、处置过程和预防动作，输出复盘报告。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
 tasks:
   - id: triage

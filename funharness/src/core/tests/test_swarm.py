@@ -27,19 +27,22 @@ class _RunnerFactory:
         self.block_event = block_event
 
     def __call__(self, role, instructions="", model="", llm_client=None, tool_registry=None):
-        return _Runner(self, role, instructions, tool_registry)
+        return _Runner(self, role, instructions, model, tool_registry)
 
 
 class _Runner:
-    def __init__(self, factory: _RunnerFactory, role: str, instructions: str, tool_registry) -> None:
+    def __init__(self, factory: _RunnerFactory, role: str, instructions: str, model: str, tool_registry) -> None:
         self.factory = factory
         self.role = role
         self.instructions = instructions
+        self.model = model
         self.tool_registry = tool_registry
 
     def run(self, task: str, context: str = "", timeout_seconds=None) -> str:
         self.factory.calls.append({
             "role": self.role,
+            "model": self.model,
+            "instructions": self.instructions,
             "task": task,
             "context": context,
             "tools": [schema["function"]["name"] for schema in self.tool_registry.get_openai_schemas()],
@@ -107,6 +110,9 @@ class SwarmPresetTests(unittest.TestCase):
             run = build_run_from_preset(item["name"], {"topic": "Agent", "goal": "Improve onboarding", "target": "Service incident"})
             self.assertGreaterEqual(len(run.agents), 3)
             self.assertGreaterEqual(len(run.tasks), 3)
+            for agent in run.agents:
+                self.assertIn("tool_web_search", agent.tools)
+                self.assertIn("tool_web_fetch", agent.tools)
         self.assertTrue(any(item["agent_count"] > 3 for item in preset_items))
 
         run = build_run_from_preset("research_team", {"topic": "Agent"})
@@ -138,6 +144,59 @@ class SwarmRuntimeTests(unittest.TestCase):
             self.assertIn("Upstream Results", synth_call["context"])
             self.assertIn("Shared Blackboard", synth_call["context"])
             self.assertIn("blackboard_publish", synth_call["tools"])
+
+    def test_swarm_workers_use_runtime_model_unless_agent_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            factory = _RunnerFactory()
+            runtime = SwarmRuntime(
+                SwarmStore(Path(tmp)),
+                runner_factory=factory,
+                model_name="gui-selected-model",
+            )
+
+            run = runtime.start_custom(
+                agents=[
+                    SwarmAgentSpec("default_agent", "Default model agent"),
+                    SwarmAgentSpec("special_agent", "Special model agent", model_name="preset-agent-model"),
+                ],
+                tasks=[
+                    SwarmTask("default_task", "default_agent", "Research default model usage"),
+                    SwarmTask("special_task", "special_agent", "Research explicit model usage"),
+                ],
+                wait=True,
+            )
+
+            self.assertEqual(run.status, RunStatus.completed)
+            models_by_role = {call["role"]: call["model"] for call in factory.calls}
+            self.assertEqual(models_by_role["Default model agent"], "gui-selected-model")
+            self.assertEqual(models_by_role["Special model agent"], "preset-agent-model")
+
+    def test_skills_summary_only_reaches_planner_agents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            factory = _RunnerFactory()
+            runtime = SwarmRuntime(
+                SwarmStore(Path(tmp)),
+                runner_factory=factory,
+                skills_summary="Available skills (1):\n  - docs: Document workflow",
+            )
+
+            run = runtime.start_custom(
+                agents=[
+                    SwarmAgentSpec("lead", "Lead planner"),
+                    SwarmAgentSpec("researcher", "Researcher"),
+                ],
+                tasks=[
+                    SwarmTask("plan", "lead", "Plan how to use skills"),
+                    SwarmTask("research", "researcher", "Research without skill list"),
+                ],
+                wait=True,
+            )
+
+            self.assertEqual(run.status, RunStatus.completed)
+            instructions_by_role = {call["role"]: call["instructions"] for call in factory.calls}
+            self.assertIn("Available skills for planning", instructions_by_role["Lead planner"])
+            self.assertIn("Document workflow", instructions_by_role["Lead planner"])
+            self.assertNotIn("Available skills for planning", instructions_by_role["Researcher"])
 
     def test_retries_incomplete_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

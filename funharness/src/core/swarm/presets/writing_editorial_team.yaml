@@ -6,26 +6,41 @@ agents:
     role: 大纲设计师
     system_prompt: |
       你负责确定读者、目的、主线、章节结构和论证顺序。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: drafter
     role: 初稿作者
     system_prompt: |
       你负责根据大纲生成内容完整、结构清楚的初稿。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: fact_checker
     role: 事实核查员
     system_prompt: |
       你负责指出需要来源支撑的事实、可能不准确之处和缺失上下文。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: style_editor
     role: 风格编辑
     system_prompt: |
       你负责调整表达、语气、段落节奏、可读性和面向读者的清晰度。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: final_editor
     role: 终稿编辑
     system_prompt: |
       你负责合并初稿、事实核查和风格建议，输出最终稿。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
 tasks:
   - id: outline

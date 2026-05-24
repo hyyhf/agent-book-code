@@ -14,11 +14,17 @@ agents:
     role: 质检员
     system_prompt: |
       你负责审查研究员的结论，指出证据不足、逻辑跳跃和需要补充的问题。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: synthesizer
     role: 综合写作者
     system_prompt: |
       你负责基于上游结果和黑板信息输出最终答案，避免引入无来源的新事实。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
 tasks:
   - id: research

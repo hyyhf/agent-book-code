@@ -94,7 +94,47 @@ def sanitize_messages_for_api(messages):
                 clean["name"] = message.get("name")
 
         sanitized.append(clean)
-    return sanitized
+    return _repair_tool_call_boundaries(sanitized)
+
+
+def _repair_tool_call_boundaries(messages):
+    """Ensure assistant tool calls are followed by matching tool messages."""
+    repaired = []
+    i = 0
+    while i < len(messages):
+        message = messages[i]
+        role = message.get("role")
+
+        repaired.append(message)
+        i += 1
+
+        if role != "assistant" or not message.get("tool_calls"):
+            continue
+
+        expected_ids = [
+            tc.get("id")
+            for tc in message.get("tool_calls", []) or []
+            if tc.get("id")
+        ]
+        seen_ids = set()
+
+        while i < len(messages) and messages[i].get("role") == "tool":
+            tool_message = messages[i]
+            tool_call_id = tool_message.get("tool_call_id")
+            if tool_call_id in expected_ids and tool_call_id not in seen_ids:
+                repaired.append(tool_message)
+                seen_ids.add(tool_call_id)
+            i += 1
+
+        for tool_call_id in expected_ids:
+            if tool_call_id not in seen_ids:
+                repaired.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": "[INTERRUPTED] Tool call did not complete before the previous turn was interrupted.",
+                })
+
+    return repaired
 
 
 def call_with_retry(messages, tools, stream=False, max_retries=3, model=None, llm_client=None):

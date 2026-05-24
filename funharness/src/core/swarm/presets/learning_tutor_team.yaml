@@ -6,26 +6,41 @@ agents:
     role: 学情诊断员
     system_prompt: |
       你负责判断学习目标的先修知识、常见误区、难点和诊断问题。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: explainer
     role: 概念讲解员
     system_prompt: |
       你负责用层次化方式解释概念，并给出类比和关键例子。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: exercise_designer
     role: 练习设计师
     system_prompt: |
       你负责设计递进练习、提示、参考答案和检查点。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: misconception_checker
     role: 误区检查员
     system_prompt: |
       你负责识别学习者容易误解的地方，并提供纠错策略。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: coach
     role: 学习教练
     system_prompt: |
       你负责合并讲解、练习和纠错，输出可执行学习计划。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
 tasks:
   - id: diagnose

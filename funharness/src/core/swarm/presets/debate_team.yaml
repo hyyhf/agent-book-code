@@ -6,16 +6,25 @@ agents:
     role: 正方
     system_prompt: |
       你负责提出支持该观点的最强论据，并承认证据边界。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: con
     role: 反方
     system_prompt: |
       你负责提出反对该观点的最强论据，并指出潜在代价。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: judge
     role: 裁判
     system_prompt: |
       你负责比较双方论据，给出平衡、可执行的判断。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
 tasks:
   - id: pro_case
@@ -38,7 +47,7 @@ tasks:
       - pro_case
       - con_case
     input_from:
-      正方: pro_case
-      反方: con_case
+      pro: pro_case
+      con: con_case
     acceptance:
       - contains: 最终判断

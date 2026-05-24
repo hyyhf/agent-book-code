@@ -118,6 +118,64 @@ class LlmMessageTests(unittest.TestCase):
             ],
         )
 
+    def test_sanitize_messages_for_api_repairs_interrupted_tool_call(self):
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "write a file"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "tool_write_file", "arguments": "{}"},
+                    },
+                ],
+                "response_metadata": {"id": "ignored"},
+            },
+            {"role": "user", "content": "hello again"},
+        ]
+
+        sanitized = sanitize_messages_for_api(messages)
+
+        self.assertEqual(sanitized[2]["role"], "assistant")
+        self.assertEqual(sanitized[3], {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "[INTERRUPTED] Tool call did not complete before the previous turn was interrupted.",
+        })
+        self.assertEqual(sanitized[4], {"role": "user", "content": "hello again"})
+
+    def test_sanitize_messages_for_api_repairs_missing_tool_result(self):
+        messages = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "tool_read_file", "arguments": "{}"},
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {"name": "tool_write_file", "arguments": "{}"},
+                    },
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "ok"},
+            {"role": "user", "content": "continue"},
+        ]
+
+        sanitized = sanitize_messages_for_api(messages)
+
+        self.assertEqual(sanitized[1], {"role": "tool", "tool_call_id": "call_1", "content": "ok"})
+        self.assertEqual(sanitized[2]["role"], "tool")
+        self.assertEqual(sanitized[2]["tool_call_id"], "call_2")
+        self.assertEqual(sanitized[3], {"role": "user", "content": "continue"})
+
     def test_call_with_retry_uses_sanitized_messages_and_requests_stream_usage(self):
         fake_client = FakeClient()
         messages = [

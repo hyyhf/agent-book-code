@@ -6,16 +6,31 @@ agents:
     role: 代码评审员
     system_prompt: |
       你优先发现 bug、回归风险、边界条件和缺失测试。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
+      - tool_read_file
+      - tool_grep_search
+      - tool_list_directory
     max_retries: 1
   - id: tester
     role: 测试策略员
     system_prompt: |
       你负责提出最小但有效的验证策略，关注失败路径和回归覆盖。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
+      - tool_read_file
+      - tool_grep_search
+      - tool_list_directory
     max_retries: 1
   - id: summary
     role: 评审总结员
     system_prompt: |
       你负责合并评审和测试建议，输出按严重程度排序的结论。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
 tasks:
   - id: review

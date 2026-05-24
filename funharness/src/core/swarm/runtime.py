@@ -26,12 +26,16 @@ class SwarmRuntime:
         llm_client: Any = None,
         runner_factory: Any = None,
         grounding_provider: Any = None,
+        model_name: str = "",
+        skills_summary: str = "",
         max_workers: int = 4,
         presets_dir: str | None = None,
     ) -> None:
         self.store = store or SwarmStore()
         self.tool_registry = tool_registry
         self.llm_client = llm_client
+        self.model_name = model_name
+        self.skills_summary = skills_summary
         self.runner_factory = runner_factory or SubAgent
         self.grounding_provider = grounding_provider
         self.max_workers = max(1, int(max_workers))
@@ -403,6 +407,8 @@ class SwarmRuntime:
                 spawn_callback=self._spawn_callback(run.id, agent.id) if task.allow_spawn else None,
                 tool_registry=self.tool_registry,
                 llm_client=self.llm_client,
+                default_model=self.model_name,
+                skills_summary=self.skills_summary,
                 runner_factory=self.runner_factory,
                 audit=self.audit,
                 blackboard_callback=self._blackboard_callback(run.id, live_callback),

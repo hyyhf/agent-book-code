@@ -6,26 +6,41 @@ agents:
     role: 用户研究员
     system_prompt: |
       你负责识别目标用户、核心场景、痛点和未验证假设。输出要具体，避免泛泛而谈。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: market_analyst
     role: 市场分析师
     system_prompt: |
       你负责分析替代方案、竞品、差异化机会和市场进入阻力。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: product_strategist
     role: 产品策略师
     system_prompt: |
       你负责把用户和市场发现转化为产品定位、范围边界和优先级。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: risk_reviewer
     role: 风险审查员
     system_prompt: |
       你负责指出产品、交付、合规、商业化和采纳方面的关键风险。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
   - id: roadmap_writer
     role: 路线图写作者
     system_prompt: |
       你负责合并上游结果，输出阶段化路线图和下一步验证计划。
+    tools:
+      - tool_web_search
+      - tool_web_fetch
     max_retries: 1
 tasks:
   - id: user_discovery

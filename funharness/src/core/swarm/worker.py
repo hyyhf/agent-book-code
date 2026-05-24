@@ -23,6 +23,8 @@ def run_swarm_worker(
     spawn_callback: Any = None,
     tool_registry: Any = None,
     llm_client: Any = None,
+    default_model: str = "",
+    skills_summary: str = "",
     runner_factory: Any = SubAgent,
     audit: QualityAuditPipeline | None = None,
     blackboard_callback: Callable[[SwarmBlackboardEntry], None] | None = None,
@@ -39,8 +41,8 @@ def run_swarm_worker(
         spawn_callback,
         blackboard_callback,
     )
-    instructions = _build_instructions(agent_spec, task, artifact_dir)
-    model = agent_spec.model_name or MODEL
+    instructions = _build_instructions(agent_spec, task, artifact_dir, skills_summary)
+    model = agent_spec.model_name or default_model or MODEL
     runner = runner_factory(
         agent_spec.role,
         instructions,
@@ -97,10 +99,16 @@ def _build_context(
     return "\n\n".join(parts)
 
 
-def _build_instructions(agent_spec: SwarmAgentSpec, task: SwarmTask, artifact_dir: Path) -> str:
+def _build_instructions(agent_spec: SwarmAgentSpec, task: SwarmTask, artifact_dir: Path, skills_summary: str = "") -> str:
     parts = []
     if agent_spec.system_prompt:
         parts.append(agent_spec.system_prompt)
+    if skills_summary.strip() and _is_planner_agent(agent_spec):
+        parts.append(
+            "Available skills for planning:\n"
+            f"{skills_summary.strip()}\n"
+            "Use this only to plan or delegate suitable work; do not assume every worker has loaded these skills."
+        )
     parts.append(
         "You are participating in a FunHarness swarm run. "
         "Return a concrete final deliverable, not only a plan. "
@@ -110,6 +118,11 @@ def _build_instructions(agent_spec: SwarmAgentSpec, task: SwarmTask, artifact_di
     if task.allow_spawn:
         parts.append("This task may request follow-up work by clearly listing proposed child tasks in the final answer.")
     return "\n\n".join(parts)
+
+
+def _is_planner_agent(agent_spec: SwarmAgentSpec) -> bool:
+    descriptor = f"{agent_spec.id} {agent_spec.role}".lower()
+    return any(marker in descriptor for marker in ("lead", "planner", "planning", "\u89c4\u5212", "\u8ba1\u5212"))
 
 
 def _render_template(template: str, variables: dict[str, str]) -> str:
