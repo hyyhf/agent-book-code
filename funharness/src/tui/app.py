@@ -879,6 +879,7 @@ class FunHarnessApp(App):
             on_token=self._on_token_sync,
             on_reasoning_token=self._on_reasoning_token_sync,
             on_reasoning_start=self._on_reasoning_start_sync,
+            on_reasoning_done=self._on_reasoning_done_sync,
             on_tool_gen=self._on_tool_gen_sync,
             on_tool_call=self._on_tool_call_sync,
             on_tool_result=self._on_tool_result_sync,
@@ -917,6 +918,9 @@ class FunHarnessApp(App):
 
     def _on_reasoning_start_sync(self):
         self._safe_callback(self._show_reasoning_start)
+
+    def _on_reasoning_done_sync(self):
+        self._safe_callback(self._finish_reasoning)
 
     def _on_tool_gen_sync(self, index: int, name: str, chunk: str):
         self._safe_callback(self._append_tool_gen, index, name, chunk)

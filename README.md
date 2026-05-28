@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v0.2.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.2.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v0.3.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.3.0)（暂支持 Windows 系统）
 
 <h2>FunHarness：从终端到图形化教学工作台</h2>
 
@@ -249,6 +249,9 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
+> - **2026-05-28 —— 新增Skills管理&web工具增强：**
+>   - **GUI Skills 管理**：左侧导航栏「Skills」面板新增完整的 Skill 管理功能，支持搜索、添加和删除 Skills，方便在 GUI 中直接管理 Agent 技能目录，无需手动操作文件系统。
+>   - **`web_fetch` 工具改进**：优化网页抓取工具的内容提取能力，提升 HTML 解析质量与稳定性。
 > - **2026-05-23 —— 新增 Swarm 多智能体协作系统：**
 >   - 全新 `swarm/` 模块，支持**静态 DAG 任务编排 + 共享黑板（Blackboard）**：多个 Agent 角色按依赖关系自动分层并发执行，Worker 之间通过黑板发布和读取共享发现，实现跨任务知识传递。
 >   - 内置 **9 套 YAML Preset 协作模板**（研究、代码审查、辩论、数据分析等）一键启动；同时支持**自适应组队、辩论模式、渐进式精化**等高级编排，以及质量审计自动重试、动态子任务派生和跨轮学习记忆。
@@ -294,8 +297,8 @@ funharness/   完整生产版本（TUI + 飞书通道）
 | **Hooks / Middleware**    | Pre/Post Tool 钩子、中间件链，无侵入地扩展 agent 行为                                                                     |
 | **可观测性**              | 结构化日志、Span 追踪、成本看板、失败模式分析、一键导出                                                                   |
 | **TUI 界面**              | 基于 Textual 的终端 UI，流式渲染、Markdown 展示、工具块边框、附件/Skills 专用展示                                         |
-| **FunHarness Studio GUI** | Electron + Vite + FastAPI 本地桌面 GUI，复用同一套 Agent Core                                                            |
-| **IM 机器人通道**         | 飞书（长连接）、QQ（WebSocket）、微信（长轮询），三通道均无需公网地址，私聊/群聊均可触发                                    |
+| **FunHarness Studio GUI** | Electron + Vite + FastAPI 本地桌面 GUI，复用同一套 Agent Core                                                             |
+| **IM 机器人通道**         | 飞书（长连接）、QQ（WebSocket）、微信（长轮询），三通道均无需公网地址，私聊/群聊均可触发                                  |
 
 
 ---
@@ -404,11 +407,11 @@ TUI 内按 `Shift+Tab` 可循环切换权限模式，当前模式持续显示在
 
 <div align="center">
 
-|                          TUI 工具调用过程                          |                          TUI 任务执行状态                          |
-| :----------------------------------------------------------------: | :----------------------------------------------------------------: |
-|    <img src="assets/funharness_runtime_page_1.png" width="450" />   |    <img src="assets/funharness_runtime_page_2.png" width="450" />   |
-|                        Studio 主界面                        |                      Studio Agent Teams                       |
-|   <img src="docs/images/studio_runtime.png" width="450" />   |   <img src="docs/images/studio_agent_teams.png" width="450" /> |
+|                        TUI 工具调用过程                        |                        TUI 任务执行状态                        |
+| :------------------------------------------------------------: | :------------------------------------------------------------: |
+| <img src="assets/funharness_runtime_page_1.png" width="450" /> | <img src="assets/funharness_runtime_page_2.png" width="450" /> |
+|                         Studio 主界面                          |                       Studio Agent Teams                       |
+|    <img src="docs/images/studio_runtime.png" width="450" />    |  <img src="docs/images/studio_agent_teams.png" width="450" />  |
 
 </div>
 
@@ -533,11 +536,11 @@ FunHarness 支持通过 **IM 机器人** 作为输入通道：用户在聊天软
 IM 消息 -> 通道网关（长连接/WebSocket/长轮询） -> 本地 FunHarness -> Agent Loop + Tools -> 回复 IM
 ```
 
-| 通道 | 接入方式 | 消息类型 | 启动命令 | 需要公网 |
-|------|---------|---------|---------|:-------:|
-| **飞书** | 长连接 (WebSocket via lark-oapi) | 文本 | `uv run fh feishu` | 否 |
-| **QQ** | WebSocket 网关 (qqbot-agent-sdk) | 文本 + 文件收发 | `uv run fh qqbot` | 否 |
-| **微信** | getUpdates 长轮询 (ilinkai API) | 文本 | `uv run fh weixin` | 否 |
+| 通道     | 接入方式                         | 消息类型        | 启动命令           | 需要公网 |
+| -------- | -------------------------------- | --------------- | ------------------ | :------: |
+| **飞书** | 长连接 (WebSocket via lark-oapi) | 文本            | `uv run fh feishu` |    否    |
+| **QQ**   | WebSocket 网关 (qqbot-agent-sdk) | 文本 + 文件收发 | `uv run fh qqbot`  |    否    |
+| **微信** | getUpdates 长轮询 (ilinkai API)  | 文本            | `uv run fh weixin` |    否    |
 
 ---
 
@@ -572,10 +575,10 @@ QQ_PERMISSION_MODE=suggest
 uv run fh qqbot
 ```
 
-| 配置项 | 说明 |
-|--------|------|
-| `QQ_APP_ID` | QQ 开放平台机器人 App ID |
-| `QQ_CLIENT_SECRET` | 机器人 Client Secret |
+| 配置项               | 说明                       |
+| -------------------- | -------------------------- |
+| `QQ_APP_ID`          | QQ 开放平台机器人 App ID   |
+| `QQ_CLIENT_SECRET`   | 机器人 Client Secret       |
 | `QQ_PERMISSION_MODE` | `suggest`（推荐）或 `auto` |
 
 ---
@@ -592,10 +595,10 @@ uv run fh weixin-login
 uv run fh weixin
 ```
 
-| 配置项 | 说明 |
-|--------|------|
+| 配置项                   | 说明                       |
+| ------------------------ | -------------------------- |
 | `WEIXIN_PERMISSION_MODE` | `suggest`（推荐）或 `auto` |
-| `WEIXIN_WORKSPACE` | Agent 工作目录（可选） |
+| `WEIXIN_WORKSPACE`       | Agent 工作目录（可选）     |
 
 登录凭证保存在 `.funharness/weixin_credentials.json`，后续启动无需重新扫码。
 
@@ -605,15 +608,15 @@ uv run fh weixin
 
 三个 IM 通道都支持在聊天窗口直接输入斜杠命令控制当前会话：
 
-| 命令 | 飞书 | QQ | 微信 | 说明 |
-|------|:----:|:--:|:----:|------|
-| `/help` | ✓ | ✓ | ✓ | 查看当前通道支持的命令 |
-| `/new` | ✓ | ✓ | ✓ | 开启一个新的 FunHarness 会话，旧会话会先保存 |
-| `/restart` / `/reset` | ✓ | ✓ | ✓ | `/new` 的别名 |
-| `/重新开始` / `重新开始` | ✓ | ✓ | ✓ | 中文“重新开始”别名 |
-| `/interrupt` | ✓ | ✓ | ✓ | 中断当前正在执行的 Agent 任务 |
-| `stop` / `interrupt` | ✓ | ✓ | ✓ | `/interrupt` 的文本别名 |
-| `/files` | - | ✓ | ✓ | 查看当前会话已注册的附件 |
+| 命令                     | 飞书  |  QQ   | 微信  | 说明                                         |
+| ------------------------ | :---: | :---: | :---: | -------------------------------------------- |
+| `/help`                  |   ✓   |   ✓   |   ✓   | 查看当前通道支持的命令                       |
+| `/new`                   |   ✓   |   ✓   |   ✓   | 开启一个新的 FunHarness 会话，旧会话会先保存 |
+| `/restart` / `/reset`    |   ✓   |   ✓   |   ✓   | `/new` 的别名                                |
+| `/重新开始` / `重新开始` |   ✓   |   ✓   |   ✓   | 中文“重新开始”别名                           |
+| `/interrupt`             |   ✓   |   ✓   |   ✓   | 中断当前正在执行的 Agent 任务                |
+| `stop` / `interrupt`     |   ✓   |   ✓   |   ✓   | `/interrupt` 的文本别名                      |
+| `/files`                 |   -   |   ✓   |   ✓   | 查看当前会话已注册的附件                     |
 
 > `/new` 只会重置当前聊天对象对应的 session：飞书按 `chat_id`，QQ 按私聊/群聊作用域，微信按 `user_id` 隔离，不会影响其他用户或其他群聊。
 
@@ -621,8 +624,8 @@ uv run fh weixin
 
 <div align="center">
 
-|                      飞书                      |                     QQ                      |                      微信                      |
-| :--------------------------------------------: | :-----------------------------------------: | :--------------------------------------------: |
+|                          飞书                          |                         QQ                         |                          微信                          |
+| :----------------------------------------------------: | :------------------------------------------------: | :----------------------------------------------------: |
 | <img src="assets/feishu_run_page_1.jpg" width="200" /> | <img src="assets/QQbot_runpage.jpg" width="200" /> | <img src="assets/weixinbot_runpage.jpg" width="200" /> |
 
 </div>

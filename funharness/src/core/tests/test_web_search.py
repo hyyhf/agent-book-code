@@ -49,6 +49,26 @@ class FakeFetchResponse:
         return html if size < 0 else html[:size]
 
 
+class CustomFetchResponse:
+    status = 200
+
+    def __init__(self, html: str, content_type: str = "text/html; charset=utf-8"):
+        self.headers = {"Content-Type": content_type}
+        self._html = html.encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def geturl(self):
+        return "https://example.com/article"
+
+    def read(self, size=-1):
+        return self._html if size < 0 else self._html[:size]
+
+
 class FakeSelection:
     def __init__(self, values):
         self._values = values
@@ -345,9 +365,86 @@ class WebSearchToolTests(unittest.TestCase):
         self.assertIn("URL: https://example.com/page", result)
         self.assertIn("Final-URL: https://example.com/final", result)
         self.assertIn("Encoding: windows-1252", result)
+        self.assertIn("Extraction: auto", result)
         self.assertIn("Title & More", result)
         self.assertIn("café", result)
         self.assertNotIn("hide()", result)
+
+    def test_web_fetch_auto_prefers_article_content_and_metadata(self) -> None:
+        html = """
+        <html>
+          <head>
+            <title>Install Guide</title>
+            <meta name="description" content="Setup instructions for the product">
+            <link rel="canonical" href="https://example.com/docs/install">
+          </head>
+          <body>
+            <nav>Pricing Login Navigation Noise</nav>
+            <article>
+              <h1>Install Guide</h1>
+              <p>Installation requirements include Python 3.12, a working shell,
+              and access to the project workspace. This paragraph is intentionally
+              long enough to be selected as the primary article content by the
+              lightweight reader.</p>
+              <p>After installation, run the test suite and check the generated
+              output carefully before sharing results with users.</p>
+            </article>
+            <footer>Copyright Footer Noise</footer>
+          </body>
+        </html>
+        """
+        with patch("funharness.src.core.webtools.fetch.urlopen", return_value=CustomFetchResponse(html)):
+            result = tool_web_fetch("https://example.com/docs/install")
+
+        self.assertIn("Title: Install Guide", result)
+        self.assertIn("Description: Setup instructions for the product", result)
+        self.assertIn("Canonical: https://example.com/docs/install", result)
+        self.assertIn("Headings: Install Guide", result)
+        self.assertIn("Installation requirements include Python 3.12", result)
+        self.assertNotIn("Pricing Login Navigation Noise", result)
+        self.assertNotIn("Copyright Footer Noise", result)
+
+    def test_web_fetch_raw_text_keeps_full_page_text(self) -> None:
+        html = """
+        <html><body>
+          <nav>Navigation Text</nav>
+          <main><p>Main article text for the reader.</p></main>
+          <footer>Footer Text</footer>
+        </body></html>
+        """
+        with patch("funharness.src.core.webtools.fetch.urlopen", return_value=CustomFetchResponse(html)):
+            result = tool_web_fetch("https://example.com/page", extraction="raw_text")
+
+        self.assertIn("Extraction: raw_text", result)
+        self.assertIn("Navigation Text", result)
+        self.assertIn("Main article text", result)
+        self.assertIn("Footer Text", result)
+
+    def test_web_fetch_query_focuses_relevant_paragraphs(self) -> None:
+        html = """
+        <html><body><main>
+          <p>Pricing plans describe seats, billing cycles, invoices, and renewals.</p>
+          <p>Installation requirements include Python, Node, environment variables,
+          and workspace permissions for local development.</p>
+          <p>Release notes describe small UI changes and copy edits.</p>
+        </main></body></html>
+        """
+        with patch("funharness.src.core.webtools.fetch.urlopen", return_value=CustomFetchResponse(html)):
+            result = tool_web_fetch("https://example.com/page", query="installation requirements")
+
+        self.assertIn("Focused-Query: installation requirements", result)
+        self.assertIn("Installation requirements include Python", result)
+        self.assertNotIn("Pricing plans describe", result)
+        self.assertNotIn("Release notes describe", result)
+
+    def test_web_fetch_schema_exposes_reader_defaults(self) -> None:
+        schema = registry.get_schema("tool_web_fetch")
+        params = schema["function"]["parameters"]
+
+        self.assertEqual(params["required"], ["url"])
+        self.assertEqual(params["properties"]["query"]["default"], "")
+        self.assertEqual(params["properties"]["extraction"]["default"], "auto")
+        self.assertEqual(params["properties"]["max_chars"]["default"], 30000)
 
     def test_web_fetch_rejects_non_http_urls(self) -> None:
         result = tool_web_fetch("file:///tmp/secret.txt")

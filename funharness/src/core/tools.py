@@ -4,18 +4,18 @@ FunHarness - Tool Registry & Core Tools
 Tool registry with decorator-based registration, core local tools,
 and web tools registered from the webtools package.
 """
+import fnmatch
 import inspect
 import json
 import os
 import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from types import UnionType
 from typing import Any, TypedDict, Union, get_args, get_origin, get_type_hints, is_typeddict
 
 from .attachments import parse_document
-from .permissions import decode_process_output, format_command_output
+from .permissions import SandboxExecutor
 
 # ----------------------------------------------------------------
 #  ToolRegistry
@@ -339,48 +339,57 @@ def tool_run_command(command: str) -> str:
     Args:
         command: Shell command string to execute
     """
-    import platform
-
-    try:
-        popen_kwargs = {
-            "shell": True,
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.PIPE,
-            "cwd": os.getcwd(),
-        }
-        if platform.system() != "Windows":
-            popen_kwargs["start_new_session"] = True
-
-        proc = subprocess.Popen(command, **popen_kwargs)
-        try:
-            stdout_bytes, stderr_bytes = proc.communicate(timeout=30)
-        except subprocess.TimeoutExpired:
-            # Kill entire process tree on Windows
-            try:
-                if platform.system() == "Windows":
-                    subprocess.run(
-                        ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                        capture_output=True, timeout=5,
-                    )
-                else:
-                    import signal
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except Exception:
-                proc.kill()
-            proc.wait(timeout=5)
-            return "Error: command timed out (30s)"
-
-        stdout = decode_process_output(stdout_bytes)
-        stderr = decode_process_output(stderr_bytes)
-        output = format_command_output(
-            command, os.getcwd(), stdout, stderr, 10000
-        )
-        return f"[exit={proc.returncode}]\n{output}"
-    except Exception as e:
-        return f"Command failed: {e}"
+    return SandboxExecutor(
+        work_dir=os.getcwd(),
+        timeout=30,
+        max_output=10000,
+    ).execute(command)
 
 
 # --- Search Tools ---
+
+_IGNORED_SEARCH_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    "dist",
+    "build",
+    ".funharness",
+}
+
+
+def _is_ignored_search_part(part: str) -> bool:
+    return part in _IGNORED_SEARCH_DIRS or part.startswith(".")
+
+
+def _matches_glob(path: Path, pattern: str) -> bool:
+    rel = path.as_posix()
+    return fnmatch.fnmatch(rel, pattern) or (
+        pattern.startswith("**/") and fnmatch.fnmatch(rel, pattern[3:])
+    )
+
+
+def _iter_search_files(root: Path, pattern: str):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            name for name in dirnames
+            if not _is_ignored_search_part(name)
+        )
+
+        base = Path(dirpath)
+        for filename in sorted(filenames):
+            if _is_ignored_search_part(filename):
+                continue
+            fp = base / filename
+            try:
+                rel = fp.relative_to(root)
+            except ValueError:
+                continue
+            if _matches_glob(rel, pattern):
+                yield fp, rel
+
 
 @registry.tool(category="search")
 def tool_list_directory(path: str) -> str:
@@ -418,26 +427,78 @@ def tool_list_directory(path: str) -> str:
 
 
 @registry.tool(category="search")
-def tool_grep_search(pattern: str, path: str) -> str:
+def tool_find_files(
+    pattern: str = "**/*",
+    path: str = ".",
+    max_results: int = 200,
+) -> str:
+    """Find files by glob pattern under a directory.
+
+    Args:
+        pattern: Glob pattern, for example '**/*.py', '**/*test*.py', or 'README*'
+        path: Root directory to search from, use '.' for current directory
+        max_results: Maximum number of matched files to return
+    """
+    try:
+        root = Path(path)
+        if not root.exists():
+            return f"Error: '{path}' does not exist"
+        if not root.is_dir():
+            return f"Error: '{path}' is not a directory"
+        if max_results < 1:
+            return "Error: max_results must be at least 1"
+
+        matches = []
+        for _fp, rel in _iter_search_files(root, pattern):
+            matches.append(rel.as_posix())
+            if len(matches) >= max_results:
+                break
+
+        if not matches:
+            return f"No files matched pattern '{pattern}' under '{path}'"
+
+        header = f"Found {len(matches)} file(s)"
+        if len(matches) >= max_results:
+            header += f" (limit {max_results})"
+        return header + ":\n" + "\n".join(matches)
+    except Exception as e:
+        return f"Find files failed: {e}"
+
+
+@registry.tool(category="search")
+def tool_grep_search(
+    pattern: str,
+    path: str = ".",
+    glob: str = "**/*",
+    ignore_case: bool = True,
+    literal: bool = False,
+    max_results: int = 80,
+) -> str:
     """Search for text pattern in file or directory. Supports regex.
 
     Args:
-        pattern: Search pattern (regex supported)
+        pattern: Search pattern, regex by default or plain text if literal=True
         path: File or directory path to search
+        glob: Glob filter for files, for example '**/*.py'
+        ignore_case: Whether to ignore case
+        literal: Treat pattern as plain text instead of regex
+        max_results: Maximum number of matched lines to return
     """
     try:
-        regex = re.compile(pattern, re.IGNORECASE)
+        flags = re.IGNORECASE if ignore_case else 0
+        regex = re.compile(re.escape(pattern) if literal else pattern, flags)
     except re.error as e:
         return f"Error: invalid regex '{pattern}': {e}"
 
     p = Path(path)
     results = []
-    max_results = 50
+    if max_results < 1:
+        return "Error: max_results must be at least 1"
 
     def _search_file(fp: Path):
         try:
             text = fp.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, PermissionError):
+        except (UnicodeDecodeError, PermissionError, OSError):
             return
         for i, line in enumerate(text.splitlines(), 1):
             if regex.search(line):
@@ -448,11 +509,10 @@ def tool_grep_search(pattern: str, path: str) -> str:
     if p.is_file():
         _search_file(p)
     elif p.is_dir():
-        for fp in sorted(p.rglob("*")):
-            if fp.is_file() and not any(part.startswith(".") for part in fp.parts):
-                _search_file(fp)
-                if len(results) >= max_results:
-                    break
+        for fp, _rel in _iter_search_files(p, glob):
+            _search_file(fp)
+            if len(results) >= max_results:
+                break
     else:
         return f"Error: '{path}' does not exist"
 

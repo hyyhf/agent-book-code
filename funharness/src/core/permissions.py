@@ -5,6 +5,7 @@ Three-mode permission system, path/command policies, sandbox executor.
 """
 import os
 import platform
+import re
 import shlex
 import subprocess
 import time
@@ -185,19 +186,43 @@ class SandboxExecutor:
             env.pop(var, None)
         return env
 
+    def _build_popen_args(self, command: str) -> tuple[str | list[str], dict, Path]:
+        work_dir = Path(self.work_dir)
+        effective_cwd = work_dir
+        command_to_run = command
+
+        if platform.system() == "Windows":
+            effective_cwd, command_to_run = _extract_windows_leading_cd(command, work_dir)
+            python_argv = _windows_python_c_argv(command_to_run)
+            if python_argv:
+                return python_argv, {
+                    "shell": False,
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.PIPE,
+                    "cwd": str(effective_cwd),
+                    "env": self._build_safe_env(),
+                }, effective_cwd
+
+        popen_kwargs = {
+            "shell": True,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "cwd": str(effective_cwd),
+            "env": self._build_safe_env(),
+        }
+        if platform.system() != "Windows":
+            popen_kwargs["start_new_session"] = True
+        return command_to_run, popen_kwargs, effective_cwd
+
     def execute(self, command: str, should_interrupt=None) -> str:
         try:
-            popen_kwargs = {
-                "shell": True,
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.PIPE,
-                "cwd": self.work_dir,
-                "env": self._build_safe_env(),
-            }
-            if platform.system() != "Windows":
-                popen_kwargs["start_new_session"] = True
+            if platform.system() == "Windows":
+                mkdir_result = _execute_windows_mkdir(command, Path(self.work_dir))
+                if mkdir_result is not None:
+                    return mkdir_result
 
-            proc = subprocess.Popen(command, **popen_kwargs)
+            popen_command, popen_kwargs, effective_cwd = self._build_popen_args(command)
+            proc = subprocess.Popen(popen_command, **popen_kwargs)
             deadline = None if self.timeout is None else time.monotonic() + self.timeout
             try:
                 while True:
@@ -220,7 +245,7 @@ class SandboxExecutor:
             stdout = decode_process_output(stdout_bytes)
             stderr = decode_process_output(stderr_bytes)
             output = format_command_output(
-                command, self.work_dir, stdout, stderr, self.max_output
+                command, effective_cwd, stdout, stderr, self.max_output
             )
             return f"[exit={proc.returncode}]\n{output}"
         except Exception as e:
@@ -244,6 +269,118 @@ class SandboxExecutor:
                 proc.kill()
             except Exception:
                 pass
+
+
+def _execute_windows_mkdir(command: str, work_dir: Path) -> str | None:
+    effective_cwd, command_to_run = _extract_windows_leading_cd(command, work_dir)
+    if _has_unquoted_shell_operator(command_to_run):
+        return None
+
+    try:
+        argv = shlex.split(command_to_run, posix=False)
+    except ValueError:
+        return None
+    if not argv:
+        return None
+
+    executable = Path(argv[0].strip('"')).name.lower()
+    if executable not in {"mkdir", "md"}:
+        return None
+
+    targets: list[Path] = []
+    ignored_flags = {"-p", "--parents", "-force"}
+    for token in argv[1:]:
+        token = token.strip('"').strip("'")
+        if token.lower() in ignored_flags:
+            continue
+        path = Path(token)
+        if not path.is_absolute():
+            path = effective_cwd / path
+        targets.append(path)
+
+    if not targets:
+        return None
+
+    created = []
+    for path in targets:
+        path.mkdir(parents=True, exist_ok=True)
+        created.append(str(path))
+
+    return "[exit=0]\n" + "\n".join(f"Created directory {path}" for path in created)
+
+
+def _extract_windows_leading_cd(command: str, work_dir: Path) -> tuple[Path, str]:
+    left, right = _split_unquoted_operator(command, "&&")
+    if right is None:
+        return work_dir, command
+
+    match = re.match(r'^\s*cd(?:\s+/d)?\s+(.+?)\s*$', left, flags=re.IGNORECASE)
+    if not match:
+        return work_dir, command
+
+    raw_path = match.group(1).strip().strip('"').strip("'")
+    if not raw_path:
+        return work_dir, command
+
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = work_dir / path
+    if not path.is_dir():
+        return work_dir, command
+
+    return path.resolve(), right.lstrip()
+
+
+def _windows_python_c_argv(command: str) -> list[str] | None:
+    if _has_unquoted_shell_operator(command):
+        return None
+    try:
+        argv = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    if not argv or "-c" not in argv:
+        return None
+
+    executable = Path(argv[0].strip('"')).name.lower()
+    if executable not in {"python", "python.exe", "py", "py.exe"}:
+        return None
+
+    c_index = argv.index("-c")
+    if c_index + 1 >= len(argv):
+        return None
+    if "\n" not in argv[c_index + 1] and "\r" not in argv[c_index + 1]:
+        return None
+    return argv
+
+
+def _has_unquoted_shell_operator(command: str) -> bool:
+    return any(
+        _split_unquoted_operator(command, operator)[1] is not None
+        for operator in ("&&", "||", "|", ">", "<")
+    )
+
+
+def _split_unquoted_operator(command: str, operator: str) -> tuple[str, str | None]:
+    in_single = False
+    in_double = False
+    i = 0
+    while i <= len(command) - len(operator):
+        ch = command[i]
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            backslashes = 0
+            j = i - 1
+            while j >= 0 and command[j] == "\\":
+                backslashes += 1
+                j -= 1
+            if backslashes % 2 == 0:
+                in_double = not in_double
+
+        if not in_single and not in_double and command.startswith(operator, i):
+            return command[:i], command[i + len(operator):]
+        i += 1
+    return command, None
 
 
 def decode_process_output(data: bytes | str | None) -> str:

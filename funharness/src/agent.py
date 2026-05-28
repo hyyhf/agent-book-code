@@ -98,6 +98,41 @@ def tool_search_memory(keyword: str) -> str:
     return search_memory(keyword)
 
 
+@registry.tool(category="skill")
+def tool_list_skills() -> str:
+    """List currently enabled skills with names, descriptions, paths, and diagnostics."""
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    payload = {
+        "skills": agent.skill_loader.list_skills(),
+        "diagnostics": agent.skill_loader.diagnostics(),
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+@registry.tool(category="skill")
+def tool_load_skill(name: str) -> str:
+    """Load the full SKILL.md content for an enabled skill by name.
+
+    Args:
+        name: Skill name from the skills summary or tool_list_skills
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    skill = agent.skill_loader.get(name)
+    if skill is None:
+        return f"Skill not found or disabled: {name}"
+    return (
+        f"# Skill: {skill.name}\n"
+        f"Description: {skill.description}\n"
+        f"Path: {skill.path}\n"
+        f"Source: {skill.source}\n\n"
+        f"{skill.raw_content}"
+    )
+
+
 @registry.tool(category="file")
 def tool_list_attachments() -> str:
     """List files attached to the current conversation session."""
@@ -585,6 +620,7 @@ class FunHarnessAgent:
         on_token(str): Called for each streaming token
         on_reasoning_token(str): Called for each thinking/reasoning token
         on_reasoning_start(): Called when reasoning output begins
+        on_reasoning_done(): Called when reasoning output ends
         on_tool_gen(index, name, chunk): Called for each tool argument token
         on_tool_call(name, args_preview, risk): Called when a tool is invoked
         on_tool_result(name, result, hook_feedback, display): Called with tool result
@@ -594,15 +630,17 @@ class FunHarnessAgent:
     """
 
     def __init__(self, mode="suggest", on_token=None, on_reasoning_token=None,
-                 on_reasoning_start=None, on_tool_gen=None, on_tool_call=None,
-                 on_tool_result=None, on_plan_token=None, on_status=None,
-                 on_approval=None, model=MODEL, llm_client=None):
+                 on_reasoning_start=None, on_reasoning_done=None,
+                 on_tool_gen=None, on_tool_call=None, on_tool_result=None,
+                 on_plan_token=None, on_status=None, on_approval=None,
+                 model=MODEL, llm_client=None):
         self.mode = PermissionMode(mode)
         self.model = model
         self.llm_client = llm_client or client
         self.on_token = on_token
         self.on_reasoning_token = on_reasoning_token
         self.on_reasoning_start = on_reasoning_start
+        self.on_reasoning_done = on_reasoning_done
         self.on_tool_gen = on_tool_gen
         self.on_tool_call = on_tool_call
         self.on_tool_result = on_tool_result
@@ -1123,6 +1161,7 @@ class FunHarnessAgent:
             llm_client=self.llm_client,
             on_token=self.on_plan_token,
             on_reasoning_token=_on_plan_reasoning,
+            on_reasoning_done=self.on_reasoning_done,
         )
         self.task_list.save(".funharness/tasks.json")
         self.progress_tracker.update(self.task_list)
@@ -1478,6 +1517,7 @@ class FunHarnessAgent:
             msg = process_stream_response(
                 stream, on_token=self.on_token,
                 on_reasoning_token=_on_reasoning_wrapper,
+                on_reasoning_done=self.on_reasoning_done,
                 on_tool_gen=self.on_tool_gen,
                 cost_tracker=self.cost_tracker,
                 should_interrupt=self.is_interrupted,

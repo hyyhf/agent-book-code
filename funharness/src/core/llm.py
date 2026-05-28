@@ -165,14 +165,15 @@ def call_with_retry(messages, tools, stream=False, max_retries=3, model=None, ll
 
 
 def process_stream_response(stream, on_token=None, on_reasoning_token=None,
-                            on_tool_gen=None, cost_tracker=None,
-                            should_interrupt=None):
+                            on_reasoning_done=None, on_tool_gen=None,
+                            cost_tracker=None, should_interrupt=None):
     """Process streaming response, call on_token for each text chunk.
 
     Args:
         stream: OpenAI streaming response
         on_token: callback(str) for each content token
         on_reasoning_token: callback(str) for each reasoning/thinking token
+        on_reasoning_done: callback() when reasoning transitions to answer/tool output
         on_tool_gen: callback(index, name, chunk) for each tool argument token
         cost_tracker: optional CostTracker to update usage
 
@@ -184,6 +185,16 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
     reasoning_parts = []
     tool_calls_data = {}
     response_metadata = {}
+    reasoning_open = False
+    reasoning_done_sent = False
+
+    def finish_reasoning() -> None:
+        nonlocal reasoning_open, reasoning_done_sent
+        if reasoning_open and not reasoning_done_sent:
+            if on_reasoning_done:
+                on_reasoning_done()
+            reasoning_done_sent = True
+        reasoning_open = False
 
     for chunk in stream:
         if should_interrupt and should_interrupt():
@@ -225,18 +236,22 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
         # Capture reasoning_content (thinking chain) from delta
         reasoning_text = getattr(delta, "reasoning_content", None)
         if reasoning_text:
+            reasoning_open = True
+            reasoning_done_sent = False
             if on_reasoning_token:
                 on_reasoning_token(reasoning_text)
             reasoning_parts.append(reasoning_text)
 
         content_text = getattr(delta, "content", None)
         if content_text:
+            finish_reasoning()
             if on_token:
                 on_token(content_text)
             content_parts.append(content_text)
 
         tool_calls = getattr(delta, "tool_calls", None)
         if tool_calls:
+            finish_reasoning()
             for tc in tool_calls:
                 idx = tc.index
                 if idx not in tool_calls_data:
@@ -255,6 +270,8 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
                                 tool_calls_data[idx]["name"],
                                 tc.function.arguments,
                             )
+
+    finish_reasoning()
 
     content = "".join(content_parts) if content_parts else None
     reasoning_content = "".join(reasoning_parts) if reasoning_parts else None

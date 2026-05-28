@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 import sys
 import tempfile
 import unittest
@@ -40,6 +41,79 @@ class SandboxExecutorTests(unittest.TestCase):
         self.assertIn("redirected.txt", result)
         self.assertIn("hello from redirected stdout", result)
         self.assertNotIn("[exit=0]\n(no output)", result)
+
+    @unittest.skipUnless(platform.system() == "Windows", "Windows mkdir behavior")
+    def test_windows_mkdir_accepts_unix_parents_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            result = SandboxExecutor(work_dir=work_dir).execute(
+                "mkdir -p stats_gov_data"
+            )
+
+            self.assertTrue((work_dir / "stats_gov_data").is_dir())
+            self.assertFalse((work_dir / "-p").exists())
+
+        self.assertIn("[exit=0]", result)
+
+    @unittest.skipUnless(platform.system() == "Windows", "Windows mkdir behavior")
+    def test_windows_mkdir_accepts_powershell_force_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            result = SandboxExecutor(work_dir=work_dir).execute(
+                "mkdir stats_gov_data -Force"
+            )
+
+            self.assertTrue((work_dir / "stats_gov_data").is_dir())
+            self.assertFalse((work_dir / "-Force").exists())
+
+        self.assertIn("[exit=0]", result)
+
+    @unittest.skipUnless(platform.system() == "Windows", "Windows mkdir behavior")
+    def test_windows_mkdir_honors_leading_cd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp) / "start"
+            target_dir = Path(tmp) / "target"
+            work_dir.mkdir()
+            target_dir.mkdir()
+
+            result = SandboxExecutor(work_dir=work_dir).execute(
+                f'cd "{target_dir}" && mkdir -p nested'
+            )
+
+            self.assertTrue((target_dir / "nested").is_dir())
+            self.assertFalse((work_dir / "nested").exists())
+            self.assertFalse((target_dir / "-p").exists())
+
+        self.assertIn("[exit=0]", result)
+
+    @unittest.skipUnless(platform.system() == "Windows", "Windows shell behavior")
+    def test_windows_cd_and_multiline_python_c_capture_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp) / "start"
+            target_dir = Path(tmp) / "target dir"
+            work_dir.mkdir()
+            target_dir.mkdir()
+            (target_dir / "heroes_data.json").write_text(
+                '[{"order": 1, "name": "捷风", "skill": [1, 2]}]',
+                encoding="utf-8",
+            )
+            script = (
+                "\n"
+                "import json\n"
+                "with open('heroes_data.json', 'r', encoding='utf-8') as f:\n"
+                "    data = json.load(f)\n"
+                "print(f'英雄总数: {len(data)}')\n"
+                "for a in data:\n"
+                "    print(f'{a[\"order\"]}. {a[\"name\"]} - {len(a[\"skill\"])}个技能')\n"
+            )
+            escaped_script = script.replace("\\", "\\\\").replace('"', '\\"')
+            command = f'cd "{target_dir}" && "{sys.executable}" -c "{escaped_script}"'
+            result = SandboxExecutor(work_dir=work_dir).execute(command)
+
+        self.assertIn("[exit=0]", result)
+        self.assertIn("英雄总数: 1", result)
+        self.assertIn("1. 捷风 - 2个技能", result)
+        self.assertNotIn("(no output)", result)
 
 
 if __name__ == "__main__":

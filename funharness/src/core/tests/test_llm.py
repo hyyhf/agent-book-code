@@ -96,6 +96,96 @@ class LlmMessageTests(unittest.TestCase):
         self.assertEqual(metadata["usage"]["completion_tokens_details"]["reasoning_tokens"], 147)
         self.assertEqual(len(cost_tracker.usages), 1)
 
+    def test_process_stream_response_marks_reasoning_done_before_content(self):
+        chunks = [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        index=0,
+                        finish_reason=None,
+                        logprobs=None,
+                        delta=SimpleNamespace(reasoning_content="thinking", content=None, tool_calls=None),
+                    )
+                ],
+                usage=None,
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        index=0,
+                        finish_reason="stop",
+                        logprobs=None,
+                        delta=SimpleNamespace(reasoning_content=None, content="answer", tool_calls=None),
+                    )
+                ],
+                usage=None,
+            ),
+        ]
+        events = []
+
+        process_stream_response(
+            chunks,
+            on_reasoning_token=lambda token: events.append(("reasoning", token)),
+            on_reasoning_done=lambda: events.append(("done", "")),
+            on_token=lambda token: events.append(("content", token)),
+        )
+
+        self.assertEqual(events, [
+            ("reasoning", "thinking"),
+            ("done", ""),
+            ("content", "answer"),
+        ])
+
+    def test_process_stream_response_marks_reasoning_done_before_tool_gen(self):
+        chunks = [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        index=0,
+                        finish_reason=None,
+                        logprobs=None,
+                        delta=SimpleNamespace(reasoning_content="thinking", content=None, tool_calls=None),
+                    )
+                ],
+                usage=None,
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        index=0,
+                        finish_reason="tool_calls",
+                        logprobs=None,
+                        delta=SimpleNamespace(
+                            reasoning_content=None,
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call_1",
+                                    function=SimpleNamespace(name="tool_read_file", arguments='{"path":'),
+                                )
+                            ],
+                        ),
+                    )
+                ],
+                usage=None,
+            ),
+        ]
+        events = []
+
+        process_stream_response(
+            chunks,
+            on_reasoning_token=lambda token: events.append(("reasoning", token)),
+            on_reasoning_done=lambda: events.append(("done", "")),
+            on_tool_gen=lambda index, name, chunk: events.append(("tool", name, chunk)),
+        )
+
+        self.assertEqual(events, [
+            ("reasoning", "thinking"),
+            ("done", ""),
+            ("tool", "tool_read_file", '{"path":'),
+        ])
+
     def test_sanitize_messages_for_api_strips_session_only_fields(self):
         messages = [
             {"role": "system", "content": "system", "response_metadata": {"id": "ignored"}},

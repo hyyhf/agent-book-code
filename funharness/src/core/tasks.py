@@ -350,7 +350,8 @@ def _parse_list(value: str | list[str] | None) -> list[str]:
 
 
 def plan_tasks(user_requirement, model=MODEL, on_token=None,
-               on_reasoning_token=None, llm_client=None):
+               on_reasoning_token=None, on_reasoning_done=None,
+               llm_client=None):
     prompt = f"""\
 Break this requirement into small, atomic tasks. For each, provide:
 task_id (T1, T2...), title, description, verify, depends_on (list of task_ids), owner (optional role/name).
@@ -373,17 +374,33 @@ Requirement: {user_requirement}"""
             reasoning_effort="high",
             extra_body={"thinking": {"type": "enabled"}},
         )
+        reasoning_open = False
+        reasoning_done_sent = False
+
+        def finish_reasoning() -> None:
+            nonlocal reasoning_open, reasoning_done_sent
+            if reasoning_open and not reasoning_done_sent:
+                if on_reasoning_done:
+                    on_reasoning_done()
+                reasoning_done_sent = True
+            reasoning_open = False
+
         for chunk in response:
             if not getattr(chunk, "choices", None):
                 continue
             delta = chunk.choices[0].delta
             reasoning_text = getattr(delta, "reasoning_content", None) or ""
-            if reasoning_text and on_reasoning_token:
-                on_reasoning_token(reasoning_text)
+            if reasoning_text:
+                reasoning_open = True
+                reasoning_done_sent = False
+                if on_reasoning_token:
+                    on_reasoning_token(reasoning_text)
             text = getattr(delta, "content", None) or ""
             if text:
+                finish_reasoning()
                 on_token(text)
                 raw_parts.append(text)
+        finish_reasoning()
         raw = "".join(raw_parts).strip()
     else:
         response = active_client.chat.completions.create(

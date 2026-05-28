@@ -57,6 +57,9 @@ Security awareness:
 
 Memory & Knowledge:
 - Use tool_save_memory to record important discoveries.
+- Use tool_list_skills to inspect enabled skills and diagnostics when needed.
+- When a task matches a listed skill, call tool_load_skill with the skill name
+  before following that skill's workflow.
 - Use tool_web_search to find information online.
 - Use tool_web_fetch to read web page content.
 - Use tool_web_crawl for advanced scraping, JavaScript-heavy pages,
