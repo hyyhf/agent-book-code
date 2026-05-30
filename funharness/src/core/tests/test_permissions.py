@@ -6,10 +6,34 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from funharness.src.core.permissions import SandboxExecutor
+from funharness.src.core.permissions import PermissionManager, PermissionMode, SandboxExecutor
 
 
 class SandboxExecutorTests(unittest.TestCase):
+    def test_runtime_command_uses_same_dangerous_command_policy(self) -> None:
+        manager = PermissionManager(mode=PermissionMode.AUTO)
+
+        decision, reason = manager.check_tool_call(
+            "tool_runtime_run",
+            {"command": "rm -rf /"},
+        )
+
+        self.assertEqual(decision, "deny")
+        self.assertIn("dangerous pattern", reason)
+
+    def test_large_output_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            command = (
+                f'"{sys.executable}" -c '
+                '"import sys; sys.stdout.write(\'x\' * 200000)"'
+            )
+            result = SandboxExecutor(work_dir=work_dir, max_output=1000).execute(command)
+
+        self.assertIn("[exit=0]", result)
+        self.assertIn("...(truncated", result)
+        self.assertLess(len(result), 1300)
+
     def test_captures_utf8_output_on_windows_locale_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             work_dir = Path(tmp)

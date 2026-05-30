@@ -72,6 +72,7 @@ class RuntimeTaskManager:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._tasks: dict[str, RuntimeTask] = {}
+        self._cancel_events: dict[str, threading.Event] = {}
         self._notifications: list[dict] = []
         self._load_existing()
 
@@ -110,8 +111,10 @@ class RuntimeTaskManager:
     def submit_command(self, command: str, description: str = "", timeout: int = 300) -> str:
         runtime_id = self._new_id("run")
         task = RuntimeTask(runtime_id, "command", description or command)
+        cancel_event = threading.Event()
         with self._lock:
             self._tasks[runtime_id] = task
+            self._cancel_events[runtime_id] = cancel_event
             self._save(task)
 
         def _run():
@@ -120,13 +123,30 @@ class RuntimeTaskManager:
                 task.started_at = time.time()
                 self._save(task)
             executor = SandboxExecutor(work_dir=str(self.work_dir), timeout=timeout, max_output=50000)
-            output = executor.execute(command)
-            status = RuntimeStatus.DONE if output.startswith("[exit=0]") else RuntimeStatus.FAILED
+            output = executor.execute(command, should_interrupt=cancel_event.is_set)
+            if output.startswith("Interrupted:"):
+                status = RuntimeStatus.CANCELLED
+            else:
+                status = RuntimeStatus.DONE if output.startswith("[exit=0]") else RuntimeStatus.FAILED
             with self._lock:
                 self._finish(task, status, output)
+                self._cancel_events.pop(runtime_id, None)
 
         threading.Thread(target=_run, daemon=True).start()
         return runtime_id
+
+    def cancel(self, runtime_id: str) -> str:
+        with self._lock:
+            task = self._tasks.get(runtime_id)
+            if not task:
+                return f"Unknown runtime task: {runtime_id}"
+            if task.status in {RuntimeStatus.DONE, RuntimeStatus.FAILED, RuntimeStatus.CANCELLED}:
+                return f"Runtime task {runtime_id} is already {task.status.value}."
+            cancel_event = self._cancel_events.get(runtime_id)
+            if cancel_event is None:
+                return f"Runtime task {runtime_id} cannot be cancelled by this process."
+            cancel_event.set()
+            return f"Cancellation requested for runtime task: {runtime_id}"
 
     def submit_callable(self, kind: str, description: str, fn: Callable[[], Any]) -> str:
         runtime_id = self._new_id(kind)

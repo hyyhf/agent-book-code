@@ -328,6 +328,19 @@ def tool_runtime_output(runtime_id: str) -> str:
     return agent.runtime.output(runtime_id)
 
 
+@registry.tool(category="task")
+def tool_runtime_cancel(runtime_id: str) -> str:
+    """Cancel a running background runtime task.
+
+    Args:
+        runtime_id: Runtime task ID
+    """
+    agent = _active_agent()
+    if agent is None:
+        return "(no active agent)"
+    return agent.runtime.cancel(runtime_id)
+
+
 @registry.tool(category="schedule")
 def tool_schedule_create(name: str, when: str, prompt: str, recurring: bool = False) -> str:
     """Create a scheduled prompt that runs in a background runtime lane when due.
@@ -1446,6 +1459,7 @@ class FunHarnessAgent:
             message_content = f"{user_input}\n\n{attachment_context}"
         self.messages.append({"role": "user", "content": message_content})
         tools = registry.get_openai_schemas()
+        turn_history_start = len(self.tool_calls_history)
 
         loop_span = self.tracer.start_span(SpanKind.AGENT_LOOP, "agent_loop",
                                            metadata={"input": user_input[:100]})
@@ -1456,7 +1470,7 @@ class FunHarnessAgent:
             # Middleware chain
             mw_context = {
                 "messages": self.messages, "iteration": iteration,
-                "tool_calls_history": self.tool_calls_history,
+                "tool_calls_history": self.tool_calls_history[turn_history_start:],
                 "should_stop": False, "injections": [],
             }
             mw_context = self.middleware_chain.run(mw_context)

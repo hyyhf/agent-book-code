@@ -23,6 +23,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "qqbot-agent-sdk" },
     { name = "qrcode" },
+    { name = "requests" },
     { name = "scrapling", extra = ["fetchers"] },
     { name = "textual", extra = ["syntax"] },
 ]
@@ -40,6 +41,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "qqbot-agent-sdk", specifier = ">=1.2.2" },
     { name = "qrcode", specifier = ">=8.0" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4.8" },
     { name = "textual", extras = ["syntax"], specifier = ">=8.2.4" },
 ]

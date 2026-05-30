@@ -8,6 +8,7 @@ import platform
 import re
 import shlex
 import subprocess
+import threading
 import time
 from enum import Enum
 from pathlib import Path
@@ -34,6 +35,7 @@ RISK_LEVELS = {
         "tool_complete_task", "tool_fail_task",
         "tool_task_create", "tool_task_update", "tool_schedule_create",
         "tool_schedule_delete", "tool_team_create", "tool_team_send",
+        "tool_runtime_cancel",
     ],
     "execute": [
         "tool_run_command", "tool_runtime_run", "tool_subagent_run",
@@ -126,7 +128,7 @@ class PermissionManager:
                 if not allowed:
                     return "deny", reason
 
-        if tool_name == "tool_run_command":
+        if tool_name in ("tool_run_command", "tool_runtime_run"):
             cmd = arguments.get("command", "")
             level, reason = self.command_policy.check(cmd)
             if level == "deny":
@@ -159,7 +161,7 @@ def detect_danger(tool_name: str, arguments: dict) -> tuple[bool, str]:
         content = arguments.get("content", "")
         if any(kw in content.lower() for kw in ["api_key", "secret", "password", "token", "private_key"]):
             return True, "Content may contain credentials"
-    if tool_name == "tool_run_command":
+    if tool_name in ("tool_run_command", "tool_runtime_run"):
         cmd = arguments.get("command", "").lower()
         for pattern in DANGEROUS_COMMAND_PATTERNS:
             if pattern in cmd:
@@ -168,6 +170,46 @@ def detect_danger(tool_name: str, arguments: dict) -> tuple[bool, str]:
 
 
 # ---- Sandbox Executor ----
+
+class _BoundedBytes:
+    def __init__(self, limit: int):
+        self.limit = max(0, limit)
+        self.total = 0
+        self._chunks: list[bytes] = []
+        self._stored = 0
+        self._lock = threading.Lock()
+
+    def append(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+        with self._lock:
+            self.total += len(chunk)
+            remaining = self.limit - self._stored
+            if remaining <= 0:
+                return
+            kept = chunk[:remaining]
+            self._chunks.append(kept)
+            self._stored += len(kept)
+
+    def data(self) -> bytes:
+        with self._lock:
+            return b"".join(self._chunks)
+
+    @property
+    def truncated(self) -> bool:
+        with self._lock:
+            return self.total > self._stored
+
+
+def _read_stream_bounded(stream, sink: _BoundedBytes) -> None:
+    try:
+        while True:
+            chunk = stream.read(4096)
+            if not chunk:
+                break
+            sink.append(chunk)
+    except Exception:
+        pass
 
 class SandboxExecutor:
     FILTERED_ENV_VARS = [
@@ -223,27 +265,56 @@ class SandboxExecutor:
 
             popen_command, popen_kwargs, effective_cwd = self._build_popen_args(command)
             proc = subprocess.Popen(popen_command, **popen_kwargs)
+            capture_limit = max(self.max_output * 4, 4096)
+            stdout_capture = _BoundedBytes(capture_limit)
+            stderr_capture = _BoundedBytes(capture_limit)
+            readers = [
+                threading.Thread(
+                    target=_read_stream_bounded,
+                    args=(proc.stdout, stdout_capture),
+                    daemon=True,
+                ),
+                threading.Thread(
+                    target=_read_stream_bounded,
+                    args=(proc.stderr, stderr_capture),
+                    daemon=True,
+                ),
+            ]
+            for reader in readers:
+                reader.start()
             deadline = None if self.timeout is None else time.monotonic() + self.timeout
             try:
                 while True:
                     if should_interrupt and should_interrupt():
                         self._kill_tree(proc)
-                        proc.wait(timeout=5)
+                        self._wait_after_kill(proc)
+                        self._close_streams(proc, readers)
                         return "Interrupted: command stopped by user"
                     if deadline is not None and time.monotonic() >= deadline:
                         raise subprocess.TimeoutExpired(command, self.timeout)
-                    try:
-                        stdout_bytes, stderr_bytes = proc.communicate(timeout=0.2)
+                    if proc.poll() is not None:
                         break
-                    except subprocess.TimeoutExpired:
-                        continue
+                    time.sleep(0.2)
             except subprocess.TimeoutExpired:
                 self._kill_tree(proc)
-                proc.wait(timeout=5)
+                self._wait_after_kill(proc)
+                self._close_streams(proc, readers)
                 return f"Error: command timed out ({self.timeout}s)"
 
-            stdout = decode_process_output(stdout_bytes)
-            stderr = decode_process_output(stderr_bytes)
+            self._close_streams(proc, readers)
+
+            stdout = decode_process_output(stdout_capture.data())
+            stderr = decode_process_output(stderr_capture.data())
+            if stdout_capture.truncated:
+                stdout += (
+                    f"\n...(stdout capture truncated, captured first "
+                    f"{len(stdout_capture.data())} of at least {stdout_capture.total} bytes)"
+                )
+            if stderr_capture.truncated:
+                stderr += (
+                    f"\n...(stderr capture truncated, captured first "
+                    f"{len(stderr_capture.data())} of at least {stderr_capture.total} bytes)"
+                )
             output = format_command_output(
                 command, effective_cwd, stdout, stderr, self.max_output
             )
@@ -261,12 +332,39 @@ class SandboxExecutor:
                     ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
                     capture_output=True, timeout=5,
                 )
+                if proc.poll() is None:
+                    proc.kill()
             else:
                 import signal
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except Exception:
             try:
                 proc.kill()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _wait_after_kill(proc: subprocess.Popen):
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _close_streams(proc: subprocess.Popen, readers: list[threading.Thread]):
+        for reader in readers:
+            reader.join(timeout=2)
+        for stream in (proc.stdout, proc.stderr):
+            try:
+                if stream:
+                    stream.close()
             except Exception:
                 pass
 
@@ -347,8 +445,6 @@ def _windows_python_c_argv(command: str) -> list[str] | None:
 
     c_index = argv.index("-c")
     if c_index + 1 >= len(argv):
-        return None
-    if "\n" not in argv[c_index + 1] and "\r" not in argv[c_index + 1]:
         return None
     return argv
 
