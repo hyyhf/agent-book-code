@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v0.3.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.3.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v0.4.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.4.0)（暂支持 Windows 系统）
 
 <h2>FunHarness：从终端到图形化教学工作台</h2>
 
