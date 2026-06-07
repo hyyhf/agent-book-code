@@ -13,6 +13,7 @@ version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
+    { name = "curl-cffi" },
     { name = "fastapi", extra = ["standard"] },
     { name = "lark-oapi" },
     { name = "openai" },
@@ -31,6 +32,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=44.0.0" },
+    { name = "curl-cffi", specifier = ">=0.15.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.136.1" },
     { name = "lark-oapi", specifier = ">=1.4.23" },
     { name = "openai", specifier = ">=2.32.0" },

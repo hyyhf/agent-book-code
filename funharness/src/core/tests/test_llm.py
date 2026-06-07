@@ -237,6 +237,21 @@ class LlmMessageTests(unittest.TestCase):
         })
         self.assertEqual(sanitized[4], {"role": "user", "content": "hello again"})
 
+    def test_sanitize_messages_for_api_drops_empty_assistant_messages(self):
+        messages = [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": None},
+            {"role": "user", "content": "second"},
+        ]
+
+        self.assertEqual(
+            sanitize_messages_for_api(messages),
+            [
+                {"role": "user", "content": "first"},
+                {"role": "user", "content": "second"},
+            ],
+        )
+
     def test_sanitize_messages_for_api_repairs_missing_tool_result(self):
         messages = [
             {

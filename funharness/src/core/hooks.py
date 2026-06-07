@@ -116,9 +116,9 @@ def large_file_guard_hook(tool_name, arguments):
     if tool_name != "tool_write_file":
         return HookResult()
     content = arguments.get("content", "")
-    if len(content) > 50000:
+    if len(content) > 100000:
         return HookResult(action=HookAction.DENY,
-                          feedback=f"Write blocked: {len(content)} chars (limit 50000). Split into smaller writes.")
+                          feedback=f"Write blocked: {len(content)} chars (limit 100000). Split into smaller writes.")
     return HookResult()
 
 

@@ -214,6 +214,8 @@ class TeamManager:
             raise ValueError(f"{member.name} is stopped. Start the member before assigning new work.")
         run = self.runs.get(run_id) if run_id else self.runs.current()
         run_id = run.run_id if run else ""
+        if run_id and run and not any(agent.name == member.name for agent in run.agents or []):
+            raise ValueError(f"{member.name} is not on this team run canvas. Add the member before assigning work.")
         team_task_id = ""
         if run_id:
             team_task_id = self.runs.assign_task(run_id, member.name, task, context)
@@ -321,8 +323,9 @@ class TeamManager:
             lines.append(f"  {member.name} [{member.role}] {member.status} (inbox: {inbox_count}{queue_note})")
         return "\n".join(lines)
 
-    def start_run(self, goal: str) -> dict:
-        run = self.runs.start(goal, self.list())
+    def start_run(self, goal: str, member_names: list[str] | None = None) -> dict:
+        members = self.list() if member_names is None else self._members_for_run(member_names)
+        run = self.runs.start(goal, members)
         payload = {"run": run.to_dict()}
         self._emit("team_run_started", payload)
         return run.to_dict()
@@ -463,6 +466,19 @@ class TeamManager:
     def _current_run_id(self) -> str:
         run = self.runs.current()
         return run.run_id if run else ""
+
+    def _members_for_run(self, member_names: list[str]) -> list[TeamMember]:
+        members: list[TeamMember] = []
+        seen: set[str] = set()
+        for name in member_names:
+            safe = _safe_name(str(name))
+            if not safe or safe in seen:
+                continue
+            member = self.get(safe)
+            if member is not None:
+                members.append(member)
+                seen.add(safe)
+        return members
 
     def _run_payload(self, run_id: str) -> dict[str, Any]:
         snapshot = self.runs.snapshot(run_id) if run_id else self.runs.snapshot()

@@ -86,6 +86,8 @@ def sanitize_messages_for_api(messages):
                 clean["reasoning_content"] = message.get("reasoning_content")
             if "tool_calls" in message:
                 clean["tool_calls"] = message.get("tool_calls")
+            if clean.get("content") is None and not clean.get("tool_calls"):
+                continue
         elif role == "tool":
             if "tool_call_id" in message:
                 clean["tool_call_id"] = message.get("tool_call_id")

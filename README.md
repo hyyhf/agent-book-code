@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v0.4.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.4.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v0.5.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.5.0)（暂支持 Windows 系统）
 
 <h2>FunHarness：从终端到图形化教学工作台</h2>
 
@@ -249,6 +249,11 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
+> - **2026-06-07 —— 新增多智能体群聊功能**
+>   - **Agent Groups 多智能体群聊**：支持创建 Agent 角色与群组，通过 `@成员` / `@all` 分派任务，不同成员可并行协作，并独立保存会话、运行记录和交付物。
+>   - **工作区体验优化**：改进文件树、代码预览和 Diff 展示，浏览与检查 Agent 生成内容更加直观。
+>   - **Skills 与 Web 工具增强**：完善 Skills 的搜索、添加、删除和按 Agent 配置能力，同时提升 `web_fetch` 的网页内容提取质量。
+>   - **稳定性修复**：加强运行时工具与权限控制，修复消息处理、团队任务分派及部分工具调用问题。
 > - **2026-05-28 —— 新增Skills管理&web工具增强：**
 >   - **GUI Skills 管理**：左侧导航栏「Skills」面板新增完整的 Skill 管理功能，支持搜索、添加和删除 Skills，方便在 GUI 中直接管理 Agent 技能目录，无需手动操作文件系统。
 >   - **`web_fetch` 工具改进**：优化网页抓取工具的内容提取能力，提升 HTML 解析质量与稳定性。
@@ -257,7 +262,7 @@ funharness/   完整生产版本（TUI + 飞书通道）
 >   - 内置 **9 套 YAML Preset 协作模板**（研究、代码审查、辩论、数据分析等）一键启动；同时支持**自适应组队、辩论模式、渐进式精化**等高级编排，以及质量审计自动重试、动态子任务派生和跨轮学习记忆。
 >   - **FunHarness Studio 可视化**：GUI 新增 Swarm 面板，以交互式 DAG 拓扑图展示任务节点状态、Agent 活动气泡、黑板消息弹窗和实时进度条；所有状态持久化到 `.funharness/swarm/` 目录，可随时断点恢复或离线审查。
 > - **2026-05-19 —— 新增桌面宠物功能：**
->   - 左侧导航栏新增「宠物」面板，可从 [Petdex 社区精选图鉴](https://petdex.crafter.run/zh) 添加像素宠物，也可上传自定义 Sprite Sheet。
+>   - 左侧导航栏新增「宠物」面板，可从 [Petdex 社区精选图鉴](https://petdex.dev) 添加像素宠物，也可上传自定义 Sprite Sheet。
 >   - 宠物以动画形式悬浮在界面角落，根据 Agent 运行状态（启动、思考、工具调用、完成、失败、审批等）自动切换动作。
 >   - 支持显示开关、位置（左下 / 右下）、大小（小 / 中 / 大）等偏好设置，配置持久化到工作目录 `pets/` 文件夹。
 > - **2026-05-16 —— 新增 QQ 机器人 & 微信机器人通道：**
