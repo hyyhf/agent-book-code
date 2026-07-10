@@ -12,7 +12,7 @@ import time
 from contextvars import ContextVar
 from pathlib import Path
 
-from .core.tools import ToolResult, registry
+from .core.tools import ToolRegistry, ToolResult, registry
 from .core.attachments import AttachmentManager, DEFAULT_ATTACHMENT_MAX_CHARS
 from .core.llm import call_with_retry, process_stream_response, MODEL, client
 from .core.system_prompt import build_system_prompt, build_environment_block, build_tools_guide
@@ -55,6 +55,17 @@ _current_agent = ContextVar("funharness_current_agent", default=None)
 def _active_agent():
     """Return the agent currently executing a tool call, if any."""
     return _current_agent.get()
+
+
+def _coerce_tool_timeout(value, default: int | None = 30) -> int:
+    fallback = default if isinstance(default, int) and default > 0 else 30
+    if value is None or isinstance(value, bool):
+        return fallback
+    try:
+        timeout = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(1, min(timeout, 24 * 60 * 60))
 
 
 def _parse_key_values(text: str) -> dict[str, str]:
@@ -646,10 +657,11 @@ class FunHarnessAgent:
                  on_reasoning_start=None, on_reasoning_done=None,
                  on_tool_gen=None, on_tool_call=None, on_tool_result=None,
                  on_plan_token=None, on_status=None, on_approval=None,
-                 model=MODEL, llm_client=None):
+                 model=MODEL, llm_client=None, tool_registry: ToolRegistry | None = None):
         self.mode = PermissionMode(mode)
         self.model = model
         self.llm_client = llm_client or client
+        self.tool_registry = tool_registry or registry
         self.on_token = on_token
         self.on_reasoning_token = on_reasoning_token
         self.on_reasoning_start = on_reasoning_start
@@ -701,6 +713,10 @@ class FunHarnessAgent:
         self.attachments = AttachmentManager(self.current_session.id)
         self.tool_calls_history = []
         self._interrupt_event = threading.Event()
+        self._active_stream = None
+        self._active_stream_lock = threading.Lock()
+        self._active_sandbox: SandboxExecutor | None = None
+        self._active_sandbox_lock = threading.Lock()
 
     def _build_system_prompt(self):
         memory_text = read_memory()
@@ -719,7 +735,7 @@ class FunHarnessAgent:
             if persona:
                 persona_prompt = persona.system_prompt
         self._system_prompt = build_system_prompt(
-            registry, mode=self.mode.value, extra_context=extra_context,
+            self.tool_registry, mode=self.mode.value, extra_context=extra_context,
             memory_text=memory_text, task_summary=task_summary,
             skills_summary=skills_summary, persona_prompt=persona_prompt,
         )
@@ -792,7 +808,7 @@ class FunHarnessAgent:
             active_persona = self.persona_store.get(self.active_persona_id)
         return {
             "mode": self.mode.value,
-            "tools": len(registry),
+            "tools": len(self.tool_registry),
             "trace_id": self.tracer.trace_id,
             "messages": len(self.messages),
             "tokens": estimate_tokens(self.messages),
@@ -1433,6 +1449,8 @@ class FunHarnessAgent:
     def request_interrupt(self):
         """Ask the current agent turn and any running command tool to stop."""
         self._interrupt_event.set()
+        self._close_active_stream()
+        self._interrupt_active_sandbox()
 
     def clear_interrupt(self):
         """Reset interrupt state before a new turn."""
@@ -1444,6 +1462,60 @@ class FunHarnessAgent:
     def _raise_if_interrupted(self):
         if self.is_interrupted():
             raise InterruptedError("Agent run interrupted by user")
+
+    def _set_active_stream(self, stream):
+        with self._active_stream_lock:
+            self._active_stream = stream
+
+    def _clear_active_stream(self, stream):
+        with self._active_stream_lock:
+            if self._active_stream is stream:
+                self._active_stream = None
+
+    def _close_active_stream(self):
+        with self._active_stream_lock:
+            stream = self._active_stream
+        close = getattr(stream, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+    def _set_active_sandbox(self, sandbox: SandboxExecutor) -> None:
+        with self._active_sandbox_lock:
+            self._active_sandbox = sandbox
+
+    def _clear_active_sandbox(self, sandbox: SandboxExecutor) -> None:
+        with self._active_sandbox_lock:
+            if self._active_sandbox is sandbox:
+                self._active_sandbox = None
+
+    def _interrupt_active_sandbox(self) -> None:
+        with self._active_sandbox_lock:
+            sandbox = self._active_sandbox
+        if sandbox is not None:
+            sandbox.interrupt()
+
+    def _run_interruptible_call(self, fn):
+        result = {}
+        done = threading.Event()
+
+        def _target():
+            try:
+                result["value"] = fn()
+            except BaseException as exc:
+                result["error"] = exc
+            finally:
+                done.set()
+
+        threading.Thread(target=_target, daemon=True).start()
+        while not done.wait(0.1):
+            self._raise_if_interrupted()
+        self._raise_if_interrupted()
+        if "error" in result:
+            raise result["error"]
+        return result.get("value")
 
     def run(self, user_input: str):
         """Execute one agent turn with the given user input.
@@ -1458,7 +1530,7 @@ class FunHarnessAgent:
         if attachment_context:
             message_content = f"{user_input}\n\n{attachment_context}"
         self.messages.append({"role": "user", "content": message_content})
-        tools = registry.get_openai_schemas()
+        tools = self.tool_registry.get_openai_schemas()
         turn_history_start = len(self.tool_calls_history)
 
         loop_span = self.tracer.start_span(SpanKind.AGENT_LOOP, "agent_loop",
@@ -1487,16 +1559,22 @@ class FunHarnessAgent:
                     "role": "user",
                     "content": "[SYSTEM] Middleware detected issues. Summarize and stop.",
                 })
-                stream = call_with_retry(
-                    self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
+                stream = self._run_interruptible_call(
+                    lambda: call_with_retry(
+                        self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
+                    )
                 )
-                msg = process_stream_response(
-                    stream, on_token=self.on_token,
-                    on_reasoning_token=self.on_reasoning_token,
-                    on_tool_gen=self.on_tool_gen,
-                    cost_tracker=self.cost_tracker,
-                    should_interrupt=self.is_interrupted,
-                )
+                self._set_active_stream(stream)
+                try:
+                    msg = process_stream_response(
+                        stream, on_token=self.on_token,
+                        on_reasoning_token=self.on_reasoning_token,
+                        on_tool_gen=self.on_tool_gen,
+                        cost_tracker=self.cost_tracker,
+                        should_interrupt=self.is_interrupted,
+                    )
+                finally:
+                    self._clear_active_stream(stream)
                 self.messages.append(msg)
                 break
 
@@ -1525,17 +1603,23 @@ class FunHarnessAgent:
                 if original_on_reasoning:
                     original_on_reasoning(token)
 
-            stream = call_with_retry(
-                self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
+            stream = self._run_interruptible_call(
+                lambda: call_with_retry(
+                    self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
+                )
             )
-            msg = process_stream_response(
-                stream, on_token=self.on_token,
-                on_reasoning_token=_on_reasoning_wrapper,
-                on_reasoning_done=self.on_reasoning_done,
-                on_tool_gen=self.on_tool_gen,
-                cost_tracker=self.cost_tracker,
-                should_interrupt=self.is_interrupted,
-            )
+            self._set_active_stream(stream)
+            try:
+                msg = process_stream_response(
+                    stream, on_token=self.on_token,
+                    on_reasoning_token=_on_reasoning_wrapper,
+                    on_reasoning_done=self.on_reasoning_done,
+                    on_tool_gen=self.on_tool_gen,
+                    cost_tracker=self.cost_tracker,
+                    should_interrupt=self.is_interrupted,
+                )
+            finally:
+                self._clear_active_stream(stream)
             self.messages.append(msg)
 
             llm_duration = (time.time() - llm_start) * 1000
@@ -1578,7 +1662,7 @@ class FunHarnessAgent:
                     self.on_tool_call(name, preview, risk)
 
                 result, hook_feedback, display = self._execute_tool(name, args_str)
-                self._raise_if_interrupted()
+                interrupted_after_tool = self.is_interrupted()
 
                 self._emit_tool_result(name, result, hook_feedback, display)
 
@@ -1597,6 +1681,9 @@ class FunHarnessAgent:
                 self.messages.append({
                     "role": "tool", "tool_call_id": tc["id"], "content": tool_content,
                 })
+
+                if interrupted_after_tool:
+                    raise InterruptedError("Agent run interrupted by user")
 
             self.messages = truncate_tool_results(self.messages)
 
@@ -1641,11 +1728,11 @@ class FunHarnessAgent:
 
         self._raise_if_interrupted()
 
-        func = registry.get_function(tool_name)
+        func = self.tool_registry.get_function(tool_name)
         if not func:
             return f"Unknown tool: {tool_name}", "", None
 
-        schema = registry.get_schema(tool_name)
+        schema = self.tool_registry.get_schema(tool_name)
         if schema:
             required = schema["function"]["parameters"].get("required", [])
             missing = [p for p in required if p not in args]
@@ -1670,10 +1757,23 @@ class FunHarnessAgent:
 
         display = None
         if tool_name == "tool_run_command":
-            result = self.approval_flow.sandbox.execute(
-                args.get("command", ""),
-                should_interrupt=self.is_interrupted,
+            timeout = _coerce_tool_timeout(
+                args.get("timeout"),
+                self.approval_flow.sandbox.timeout,
             )
+            sandbox = SandboxExecutor(
+                work_dir=self.approval_flow.sandbox.work_dir,
+                timeout=timeout,
+                max_output=self.approval_flow.sandbox.max_output,
+            )
+            self._set_active_sandbox(sandbox)
+            try:
+                result = sandbox.execute(
+                    args.get("command", ""),
+                    should_interrupt=self.is_interrupted,
+                )
+            finally:
+                self._clear_active_sandbox(sandbox)
         else:
             try:
                 self._raise_if_interrupted()

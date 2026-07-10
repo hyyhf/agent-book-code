@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import threading
 import time
+import ctypes
 from enum import Enum
 from pathlib import Path
 
@@ -221,6 +222,9 @@ class SandboxExecutor:
         self.work_dir = work_dir or os.getcwd()
         self.timeout = timeout
         self.max_output = max_output
+        self._process: subprocess.Popen | None = None
+        self._process_lock = threading.Lock()
+        self._interrupted = threading.Event()
 
     def _build_safe_env(self) -> dict:
         env = os.environ.copy()
@@ -252,12 +256,23 @@ class SandboxExecutor:
             "cwd": str(effective_cwd),
             "env": self._build_safe_env(),
         }
-        if platform.system() != "Windows":
+        if platform.system() == "Windows":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
             popen_kwargs["start_new_session"] = True
         return command_to_run, popen_kwargs, effective_cwd
 
+    def interrupt(self) -> None:
+        """Request immediate termination of the active subprocess tree."""
+        self._interrupted.set()
+        with self._process_lock:
+            proc = self._process
+        if proc is not None and proc.poll() is None:
+            self._kill_tree(proc)
+
     def execute(self, command: str, should_interrupt=None) -> str:
         try:
+            self._interrupted.clear()
             if platform.system() == "Windows":
                 mkdir_result = _execute_windows_mkdir(command, Path(self.work_dir))
                 if mkdir_result is not None:
@@ -265,6 +280,8 @@ class SandboxExecutor:
 
             popen_command, popen_kwargs, effective_cwd = self._build_popen_args(command)
             proc = subprocess.Popen(popen_command, **popen_kwargs)
+            with self._process_lock:
+                self._process = proc
             capture_limit = max(self.max_output * 4, 4096)
             stdout_capture = _BoundedBytes(capture_limit)
             stderr_capture = _BoundedBytes(capture_limit)
@@ -285,10 +302,11 @@ class SandboxExecutor:
             deadline = None if self.timeout is None else time.monotonic() + self.timeout
             try:
                 while True:
-                    if should_interrupt and should_interrupt():
+                    if self._interrupted.is_set() or (should_interrupt and should_interrupt()):
+                        self._interrupted.set()
                         self._kill_tree(proc)
                         self._wait_after_kill(proc)
-                        self._close_streams(proc, readers)
+                        self._close_streams(proc, readers, close_pipes=True)
                         return "Interrupted: command stopped by user"
                     if deadline is not None and time.monotonic() >= deadline:
                         raise subprocess.TimeoutExpired(command, self.timeout)
@@ -298,8 +316,12 @@ class SandboxExecutor:
             except subprocess.TimeoutExpired:
                 self._kill_tree(proc)
                 self._wait_after_kill(proc)
-                self._close_streams(proc, readers)
+                self._close_streams(proc, readers, close_pipes=True)
                 return f"Error: command timed out ({self.timeout}s)"
+
+            if self._interrupted.is_set():
+                self._close_streams(proc, readers, close_pipes=True)
+                return "Interrupted: command stopped by user"
 
             self._close_streams(proc, readers)
 
@@ -321,17 +343,29 @@ class SandboxExecutor:
             return f"[exit={proc.returncode}]\n{output}"
         except Exception as e:
             return f"Execution failed: {e}"
+        finally:
+            with self._process_lock:
+                self._process = None
 
     @staticmethod
     def _kill_tree(proc: subprocess.Popen):
         """Kill the entire process tree (not just the shell parent)."""
         try:
             if platform.system() == "Windows":
+                descendant_pids = _windows_descendant_pids(proc.pid)
+                system_root = os.environ.get("SystemRoot", r"C:\Windows")
+                taskkill = str(Path(system_root) / "System32" / "taskkill.exe")
+                if not Path(taskkill).exists():
+                    taskkill = "taskkill"
                 # taskkill /T kills the whole tree, /F forces termination
                 subprocess.run(
-                    ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                    [taskkill, "/T", "/F", "/PID", str(proc.pid)],
                     capture_output=True, timeout=5,
                 )
+                for pid in reversed(descendant_pids):
+                    _windows_terminate_pid(pid)
+                _windows_terminate_pid(proc.pid)
+                _wait_for_windows_pids_exit([*descendant_pids, proc.pid], timeout=2.0)
                 if proc.poll() is None:
                     proc.kill()
             else:
@@ -358,15 +392,136 @@ class SandboxExecutor:
                 pass
 
     @staticmethod
-    def _close_streams(proc: subprocess.Popen, readers: list[threading.Thread]):
+    def _close_streams(proc: subprocess.Popen, readers: list[threading.Thread], close_pipes: bool = False):
+        if close_pipes:
+            for stream in (proc.stdout, proc.stderr):
+                try:
+                    if stream:
+                        stream.close()
+                except Exception:
+                    pass
         for reader in readers:
-            reader.join(timeout=2)
+            reader.join(timeout=0.5 if close_pipes else 2)
         for stream in (proc.stdout, proc.stderr):
             try:
                 if stream:
                     stream.close()
             except Exception:
                 pass
+
+
+def _windows_descendant_pids(root_pid: int) -> list[int]:
+    if platform.system() != "Windows":
+        return []
+    try:
+        parent_map = _windows_parent_pid_map()
+    except Exception:
+        return []
+    descendants: list[int] = []
+    stack = [root_pid]
+    while stack:
+        parent = stack.pop()
+        children = parent_map.get(parent, [])
+        descendants.extend(children)
+        stack.extend(children)
+    return descendants
+
+
+def _windows_parent_pid_map() -> dict[int, list[int]]:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    TH32CS_SNAPPROCESS = 0x00000002
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+    kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    kernel32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.Process32FirstW.restype = ctypes.c_int
+    kernel32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.Process32NextW.restype = ctypes.c_int
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", ctypes.c_uint32),
+            ("cntUsage", ctypes.c_uint32),
+            ("th32ProcessID", ctypes.c_uint32),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", ctypes.c_uint32),
+            ("cntThreads", ctypes.c_uint32),
+            ("th32ParentProcessID", ctypes.c_uint32),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", ctypes.c_uint32),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snapshot == INVALID_HANDLE_VALUE:
+        return {}
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        parent_map: dict[int, list[int]] = {}
+        ok = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+        while ok:
+            parent_map.setdefault(int(entry.th32ParentProcessID), []).append(int(entry.th32ProcessID))
+            ok = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+        return parent_map
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+
+def _windows_terminate_pid(pid: int) -> None:
+    if platform.system() != "Windows" or pid <= 0 or pid == os.getpid():
+        return
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    PROCESS_TERMINATE = 0x0001
+    kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.TerminateProcess.restype = ctypes.c_int
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+    handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, int(pid))
+    if not handle:
+        return
+    try:
+        kernel32.TerminateProcess(handle, 1)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _windows_pid_exists(pid: int) -> bool:
+    if platform.system() != "Windows" or pid <= 0:
+        return False
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+    kernel32.GetExitCodeProcess.restype = ctypes.c_int
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return False
+    try:
+        exit_code = ctypes.c_uint32()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _wait_for_windows_pids_exit(pids: list[int], timeout: float) -> None:
+    if platform.system() != "Windows":
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(_windows_pid_exists(pid) for pid in pids):
+            return
+        time.sleep(0.05)
 
 
 def _execute_windows_mkdir(command: str, work_dir: Path) -> str | None:

@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v0.6.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.6.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v0.7.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.7.0)（暂支持 Windows 系统）
 
 <h2>FunHarness：从终端到图形化教学工作台</h2>
 
@@ -249,6 +249,9 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
+> - **2026-07-10 —— 新增概念工坊 (Concept Workshop) 功能**
+>   - **概念学习页与互动沙盘生成 (Concept Lab & Sandbox)**：可为任意抽象概念一键生成响应式、内联的交互式 HTML 学习页与高保真互动沙盘，内置边界条件与失效诊断，支持沙盒错误自我修复。
+>   - **认知进化与渐进式归档 (Evolution & Archive)**：提供多轮启发式对话以辅助深度理解，能将学习收获沉淀为持久化的概念卡片归档，支持精细的 Patch 补丁修改、合并与对比。
 > - **2026-06-17 —— 新增学习实验室 (Study Lab) 功能**
 >   - **智能阅读与图谱双向联动**：导入本地 PDF/MD/TXT 或网页快照，智能解析并生成交互式概念图谱，支持图谱与阅读文本双向绑定高亮。
 >   - **四大核心主动学习工具**：集成文档导师多轮追问、主动回忆闪卡、多维单选测验（Quiz）、费曼法对话（AI 扮演 8 岁学生启发式追问）。

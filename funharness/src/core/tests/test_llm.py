@@ -186,6 +186,33 @@ class LlmMessageTests(unittest.TestCase):
             ("tool", "tool_read_file", '{"path":'),
         ])
 
+    def test_process_stream_response_treats_closed_stream_as_interrupt(self):
+        class ClosingStream:
+            def __init__(self):
+                self.closed = False
+                self.calls = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                self.calls += 1
+                raise RuntimeError("stream closed")
+
+            def close(self):
+                self.closed = True
+
+        stream = ClosingStream()
+        interrupt_checks = iter([False, True])
+
+        def should_interrupt():
+            return next(interrupt_checks, True)
+
+        with self.assertRaises(InterruptedError):
+            process_stream_response(stream, should_interrupt=should_interrupt)
+
+        self.assertTrue(stream.closed)
+
     def test_sanitize_messages_for_api_strips_session_only_fields(self):
         messages = [
             {"role": "system", "content": "system", "response_metadata": {"id": "ignored"}},

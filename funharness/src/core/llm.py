@@ -14,6 +14,15 @@ from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 
 
+def _default_timeout_seconds() -> float:
+    raw = os.getenv("FUNHARNESS_LLM_TIMEOUT", "60").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return 60.0
+    return max(5.0, value)
+
+
 def _find_env():
     """Walk up to find .env file."""
     candidates = [Path.cwd()]
@@ -46,7 +55,10 @@ _env = _find_env()
 if _env:
     load_dotenv(_env, encoding="utf-8-sig")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY") or "missing-api-key")
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY") or "missing-api-key",
+    timeout=_default_timeout_seconds(),
+)
 MODEL = os.getenv("OPENAI_MODEL_NAME", "deepseek-v4-flash")
 
 
@@ -198,11 +210,30 @@ def process_stream_response(stream, on_token=None, on_reasoning_token=None,
             reasoning_done_sent = True
         reasoning_open = False
 
-    for chunk in stream:
-        if should_interrupt and should_interrupt():
-            close = getattr(stream, "close", None)
-            if close:
+    def close_stream() -> None:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            try:
                 close()
+            except Exception:
+                pass
+
+    iterator = iter(stream)
+    while True:
+        if should_interrupt and should_interrupt():
+            close_stream()
+            raise InterruptedError("Agent run interrupted")
+        try:
+            chunk = next(iterator)
+        except StopIteration:
+            break
+        except Exception:
+            if should_interrupt and should_interrupt():
+                close_stream()
+                raise InterruptedError("Agent run interrupted")
+            raise
+        if should_interrupt and should_interrupt():
+            close_stream()
             raise InterruptedError("Agent run interrupted")
 
         for attr in ("id", "object", "created", "model", "system_fingerprint"):

@@ -1,5 +1,8 @@
+import json
 import os
+import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -35,6 +38,125 @@ class AgentLoopMiddlewareTests(unittest.TestCase):
                 os.chdir(old_cwd)
 
         self.assertNotIn("Middleware force stop", statuses)
+
+    def test_run_command_tool_honors_timeout_argument(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cwd = os.getcwd()
+            agent = None
+            os.chdir(tmp)
+            try:
+                agent = FunHarnessAgent(mode="auto", llm_client=object())
+                command = f'"{sys.executable}" -c "import time; time.sleep(2)"'
+
+                result, _, _ = agent._execute_tool(
+                    "tool_run_command",
+                    json.dumps({"command": command, "timeout": 1}),
+                )
+            finally:
+                if agent is not None:
+                    agent.scheduler.stop()
+                os.chdir(old_cwd)
+
+        self.assertIn("timed out (1s)", result)
+
+    def test_request_interrupt_closes_active_stream(self) -> None:
+        class CloseableStream:
+            def __init__(self) -> None:
+                self.closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        agent = FunHarnessAgent(llm_client=object())
+        stream = CloseableStream()
+        try:
+            agent._set_active_stream(stream)
+
+            agent.request_interrupt()
+        finally:
+            agent.scheduler.stop()
+
+        self.assertTrue(stream.closed)
+        self.assertTrue(agent.is_interrupted())
+
+    def test_interruptible_call_returns_when_agent_is_interrupted(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        errors: list[BaseException] = []
+        agent = FunHarnessAgent(llm_client=object())
+
+        def blocking_call() -> str:
+            entered.set()
+            release.wait(timeout=5)
+            return "late"
+
+        def run_call() -> None:
+            try:
+                agent._run_interruptible_call(blocking_call)
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=run_call)
+        try:
+            thread.start()
+            self.assertTrue(entered.wait(timeout=1))
+
+            agent.request_interrupt()
+            thread.join(timeout=1)
+        finally:
+            release.set()
+            agent.scheduler.stop()
+            thread.join(timeout=1)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], InterruptedError)
+
+    def test_interrupted_tool_result_is_emitted_before_turn_stops(self) -> None:
+        tool_results = []
+        assistant_msg = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "tool_run_command",
+                        "arguments": json.dumps({"command": "sleep"}),
+                    },
+                }
+            ],
+        }
+
+        def execute_and_interrupt(_name, _args):
+            agent.request_interrupt()
+            return "Interrupted: command stopped by user", "", None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cwd = os.getcwd()
+            agent = None
+            os.chdir(tmp)
+            try:
+                agent = FunHarnessAgent(
+                    mode="auto",
+                    llm_client=object(),
+                    on_tool_result=lambda *args: tool_results.append(args),
+                )
+                with patch("funharness.src.agent.call_with_retry", return_value=[]), patch(
+                    "funharness.src.agent.process_stream_response",
+                    return_value=assistant_msg,
+                ), patch.object(agent, "_execute_tool", side_effect=execute_and_interrupt):
+                    with self.assertRaises(InterruptedError):
+                        agent.run("run it")
+            finally:
+                if agent is not None:
+                    agent.scheduler.stop()
+                os.chdir(old_cwd)
+
+        self.assertEqual(len(tool_results), 1)
+        self.assertEqual(tool_results[0][0], "tool_run_command")
+        self.assertEqual(tool_results[0][1], "Interrupted: command stopped by user")
 
 
 if __name__ == "__main__":

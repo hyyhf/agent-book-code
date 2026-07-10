@@ -93,6 +93,15 @@ class ReplaceInFileToolTests(unittest.TestCase):
         self.assertIn("propose a teammate lineup first", prompt)
         self.assertIn("Dependent work must be dispatched sequentially", prompt)
 
+    def test_run_command_schema_exposes_timeout(self) -> None:
+        schema = registry.get_schema("tool_run_command")
+        params = schema["function"]["parameters"]
+
+        self.assertEqual(params["required"], ["command"])
+        self.assertEqual(params["properties"]["timeout"]["type"], "integer")
+        self.assertEqual(params["properties"]["timeout"]["default"], 30)
+        self.assertIn("long-lived services", schema["function"]["description"])
+
 
 class SearchToolTests(unittest.TestCase):
     def test_find_files_matches_root_files_and_prunes_ignored_dirs(self) -> None:

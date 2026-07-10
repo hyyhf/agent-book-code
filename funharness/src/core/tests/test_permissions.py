@@ -3,6 +3,8 @@ from __future__ import annotations
 import platform
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -33,6 +35,58 @@ class SandboxExecutorTests(unittest.TestCase):
         self.assertIn("[exit=0]", result)
         self.assertIn("...(truncated", result)
         self.assertLess(len(result), 1300)
+
+    def test_interrupt_stops_running_command_from_another_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            executor = SandboxExecutor(work_dir=work_dir, timeout=30)
+            command = f'"{sys.executable}" -c "import time; time.sleep(30)"'
+            result: list[str] = []
+
+            thread = threading.Thread(
+                target=lambda: result.append(executor.execute(command)),
+                daemon=True,
+            )
+            thread.start()
+            deadline = time.time() + 3
+            while time.time() < deadline:
+                with executor._process_lock:
+                    running = executor._process is not None
+                if running:
+                    break
+                time.sleep(0.05)
+
+            executor.interrupt()
+            thread.join(timeout=5)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result, ["Interrupted: command stopped by user"])
+
+    def test_interrupt_stops_shell_command_with_cd_and_redirect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp)
+            executor = SandboxExecutor(work_dir=work_dir, timeout=30)
+            command = f'cd "{work_dir}" && "{sys.executable}" -c "import time; time.sleep(30)" 2>&1'
+            result: list[str] = []
+
+            thread = threading.Thread(
+                target=lambda: result.append(executor.execute(command)),
+                daemon=True,
+            )
+            thread.start()
+            deadline = time.time() + 3
+            while time.time() < deadline:
+                with executor._process_lock:
+                    running = executor._process is not None
+                if running:
+                    break
+                time.sleep(0.05)
+
+            executor.interrupt()
+            thread.join(timeout=5)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result, ["Interrupted: command stopped by user"])
 
     def test_captures_utf8_output_on_windows_locale_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

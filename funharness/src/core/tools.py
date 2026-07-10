@@ -333,15 +333,19 @@ def tool_replace_in_file(
 # --- System Tools ---
 
 @registry.tool(category="system")
-def tool_run_command(command: str) -> str:
-    """Execute a shell command and return output. Timeout 30s.
+def tool_run_command(command: str, timeout: int = 30) -> str:
+    """Execute a short shell command and return output.
+
+    Use tool_runtime_run for long-lived services, preview servers, dev servers,
+    watchers, or other commands that should keep running in the background.
 
     Args:
         command: Shell command string to execute
+        timeout: Maximum seconds to wait before stopping the command
     """
     return SandboxExecutor(
         work_dir=os.getcwd(),
-        timeout=30,
+        timeout=timeout,
         max_output=10000,
     ).execute(command)
 
