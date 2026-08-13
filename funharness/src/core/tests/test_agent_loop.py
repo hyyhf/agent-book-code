@@ -10,6 +10,50 @@ from funharness.src.agent import FunHarnessAgent
 
 
 class AgentLoopMiddlewareTests(unittest.TestCase):
+    def test_incomplete_chunked_stream_is_retried_in_the_same_agent_turn(self) -> None:
+        statuses = []
+        completed = {
+            "role": "assistant",
+            "content": (
+                "The model connection recovered and the agent completed the requested task "
+                "without restarting or duplicating the user's turn."
+            ),
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cwd = os.getcwd()
+            agent = None
+            os.chdir(tmp)
+            try:
+                agent = FunHarnessAgent(on_status=statuses.append, llm_client=object())
+                with patch(
+                    "funharness.src.agent.call_with_retry",
+                    side_effect=[object(), object()],
+                ) as call, patch(
+                    "funharness.src.agent.process_stream_response",
+                    side_effect=[
+                        RuntimeError(
+                            "peer closed connection without sending complete message body "
+                            "(incomplete chunked read)"
+                        ),
+                        completed,
+                    ],
+                ), patch.object(agent._interrupt_event, "wait", return_value=False):
+                    agent.run("继续当前任务")
+            finally:
+                if agent is not None:
+                    agent.scheduler.stop()
+                os.chdir(old_cwd)
+
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual(
+            [item for item in agent.messages if item.get("role") == "user"],
+            [{"role": "user", "content": "继续当前任务"}],
+        )
+        self.assertEqual(agent.messages[-1], completed)
+        self.assertTrue(any("正在自动重连" in item for item in statuses))
+        self.assertFalse(any("正在等待模型响应" in item for item in statuses))
+
     def test_new_turn_does_not_force_stop_from_previous_tool_errors(self) -> None:
         statuses = []
 

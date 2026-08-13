@@ -45,6 +45,37 @@ from .core.observability import (
 )
 
 MAX_ITERATIONS = 100
+STREAM_READ_MAX_ATTEMPTS = 3
+_RETRYABLE_STREAM_ERROR_NAMES = {
+    "apiconnectionerror",
+    "apitimeouterror",
+    "connecterror",
+    "readerror",
+    "readtimeout",
+    "remoteprotocolerror",
+}
+_RETRYABLE_STREAM_ERROR_MARKERS = (
+    "incomplete chunked read",
+    "peer closed connection",
+    "connection reset",
+    "connection aborted",
+    "server disconnected",
+    "remote protocol error",
+)
+
+
+def _is_retryable_stream_error(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if current.__class__.__name__.lower() in _RETRYABLE_STREAM_ERROR_NAMES:
+            return True
+        message = str(current).lower()
+        if any(marker in message for marker in _RETRYABLE_STREAM_ERROR_MARKERS):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 # ---- Extra tool functions registered on registry ----
@@ -671,6 +702,7 @@ class FunHarnessAgent:
         self.on_tool_result = on_tool_result
         self.on_plan_token = on_plan_token
         self.on_status = on_status
+        self.last_run_stop_reason = "idle"
 
         # Initialize subsystems
         init_memory()
@@ -1517,13 +1549,63 @@ class FunHarnessAgent:
             raise result["error"]
         return result.get("value")
 
-    def run(self, user_input: str):
+    def _process_llm_stream_with_retry(
+        self,
+        tools,
+        *,
+        on_reasoning_token=None,
+        on_reasoning_done=None,
+    ):
+        for attempt in range(1, STREAM_READ_MAX_ATTEMPTS + 1):
+            self._raise_if_interrupted()
+            stream = self._run_interruptible_call(
+                lambda: call_with_retry(
+                    self.messages,
+                    tools,
+                    stream=True,
+                    model=self.model,
+                    llm_client=self.llm_client,
+                )
+            )
+            self._set_active_stream(stream)
+            try:
+                return process_stream_response(
+                    stream,
+                    on_token=self.on_token,
+                    on_reasoning_token=on_reasoning_token,
+                    on_reasoning_done=on_reasoning_done,
+                    on_tool_gen=self.on_tool_gen,
+                    cost_tracker=self.cost_tracker,
+                    should_interrupt=self.is_interrupted,
+                )
+            except Exception as exc:
+                if not _is_retryable_stream_error(exc) or attempt >= STREAM_READ_MAX_ATTEMPTS:
+                    raise
+                self._emit_status(
+                    f"模型连接短暂中断，正在自动重连"
+                    f"（第 {attempt} 次，共 {STREAM_READ_MAX_ATTEMPTS - 1} 次）"
+                )
+                if self._interrupt_event.wait(min(2 ** (attempt - 1), 2)):
+                    self._raise_if_interrupted()
+            finally:
+                self._clear_active_stream(stream)
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+        raise RuntimeError("模型流式响应重试次数已用尽")
+
+    def run(self, user_input: str, *, reset_interrupt: bool = True):
         """Execute one agent turn with the given user input.
 
         This is an async-compatible generator that yields events:
         Uses callbacks (on_token, on_tool_call, on_tool_result, on_status).
         """
-        self.clear_interrupt()
+        if reset_interrupt:
+            self.clear_interrupt()
+        self.last_run_stop_reason = "running"
         self.cost_tracker.mark_turn_start()
         attachment_context = self._attachment_context()
         message_content = user_input
@@ -1554,27 +1636,16 @@ class FunHarnessAgent:
                 })
 
             if mw_context["should_stop"]:
+                self.last_run_stop_reason = "middleware_stop"
                 self._emit_status("Middleware force stop")
                 self.messages.append({
                     "role": "user",
                     "content": "[SYSTEM] Middleware detected issues. Summarize and stop.",
                 })
-                stream = self._run_interruptible_call(
-                    lambda: call_with_retry(
-                        self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
-                    )
+                msg = self._process_llm_stream_with_retry(
+                    tools,
+                    on_reasoning_token=self.on_reasoning_token,
                 )
-                self._set_active_stream(stream)
-                try:
-                    msg = process_stream_response(
-                        stream, on_token=self.on_token,
-                        on_reasoning_token=self.on_reasoning_token,
-                        on_tool_gen=self.on_tool_gen,
-                        cost_tracker=self.cost_tracker,
-                        should_interrupt=self.is_interrupted,
-                    )
-                finally:
-                    self._clear_active_stream(stream)
                 self.messages.append(msg)
                 break
 
@@ -1603,23 +1674,11 @@ class FunHarnessAgent:
                 if original_on_reasoning:
                     original_on_reasoning(token)
 
-            stream = self._run_interruptible_call(
-                lambda: call_with_retry(
-                    self.messages, tools, stream=True, model=self.model, llm_client=self.llm_client
-                )
+            msg = self._process_llm_stream_with_retry(
+                tools,
+                on_reasoning_token=_on_reasoning_wrapper,
+                on_reasoning_done=self.on_reasoning_done,
             )
-            self._set_active_stream(stream)
-            try:
-                msg = process_stream_response(
-                    stream, on_token=self.on_token,
-                    on_reasoning_token=_on_reasoning_wrapper,
-                    on_reasoning_done=self.on_reasoning_done,
-                    on_tool_gen=self.on_tool_gen,
-                    cost_tracker=self.cost_tracker,
-                    should_interrupt=self.is_interrupted,
-                )
-            finally:
-                self._clear_active_stream(stream)
             self.messages.append(msg)
 
             llm_duration = (time.time() - llm_start) * 1000
@@ -1640,6 +1699,7 @@ class FunHarnessAgent:
                         "content": f"[HOOK FEEDBACK] {pre_completion.feedback}\nPlease revise.",
                     })
                     continue
+                self.last_run_stop_reason = "completed"
                 break
 
             # Process tool calls
@@ -1688,6 +1748,7 @@ class FunHarnessAgent:
             self.messages = truncate_tool_results(self.messages)
 
         else:
+            self.last_run_stop_reason = "max_iterations"
             self._emit_status("Max iterations reached.")
 
         self.tracer.finish_span(loop_span)

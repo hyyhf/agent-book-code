@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v0.7.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.7.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v0.8.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.8.0)（暂支持 Windows 系统）
 
 <h2>FunHarness：从终端到图形化教学工作台</h2>
 
@@ -249,6 +249,10 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
+> - **2026-08-13 —— 新增心智庭院 (Mind Garden) 功能**
+>   - **个性化心理与认知沉淀空间**：提供心事篮、日历、照片故事、我的记忆、生活议题与星图观察等功能，帮助用户在多维度的倾诉与记录中渐进式梳理情绪、归纳认知并沉淀个人哲学。
+> - **2026-08-05 —— 新增概念冲刺 (Concept Sprint) 功能**
+>   - **高效概念拆解与深度理解加速器**：基于卡片化与场景化互动设计，帮助用户快速聚焦特定知识或主题，通过短周期、高强度的启发式探究与学练反馈完成复杂概念的突击掌握。
 > - **2026-07-10 —— 新增概念工坊 (Concept Workshop) 功能**
 >   - **概念学习页与互动沙盘生成 (Concept Lab & Sandbox)**：可为任意抽象概念一键生成响应式、内联的交互式 HTML 学习页与高保真互动沙盘，内置边界条件与失效诊断，支持沙盒错误自我修复。
 >   - **认知进化与渐进式归档 (Evolution & Archive)**：提供多轮启发式对话以辅助深度理解，能将学习收获沉淀为持久化的概念卡片归档，支持精细的 Patch 补丁修改、合并与对比。

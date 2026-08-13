@@ -10,6 +10,7 @@ dependencies = [
     "openai>=2.32.0",
     "openai-agents>=0.14.3",
     "openpyxl>=3.1.5",
+    "pillow>=11.1.0",
     "python-dotenv>=1.2.2",
     "python-docx>=1.2.0",
     "pypdf>=6.4.0",
