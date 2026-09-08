@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v0.8.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.8.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v0.9.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v0.9.0)（暂支持 Windows 系统）
 
 <h2>FunHarness：从终端到图形化教学工作台</h2>
 
@@ -249,6 +249,10 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
+> - **2026-09-09 —— 新增概念桌面 (Concept Desk) 功能**
+>   - **空间桌面与 Stage Manager 交互**：将概念工坊升级为包含竹韵纸纹视口、桌面快捷方式与 Dock 的原生空间桌面，支持“概念桌面概览”、“学习空间”、“探索空间”、“归档空间”等多维工作区视角。
+>   - **Stage Manager 任务轨道与多维空间**：右侧集成 Stage Manager 任务调度面板，无缝联动概念生长 (Growth)、认知冲刺 (Sprint)、概念产物 (Concept HTML)、互动沙盘 (Sandbox)、概念进化 (Evolution)、概念宇宙 (Universe) 与概念档案 (Archive) 7 大子模块。
+>   - **实时推演脉络与成果回执**：主窗口实时聚焦 Agent 执行阶段、事件轨道（Event Rail）与实时输出预览，任务完成后自动触发成果回执 (Completion Toast)，支持一键跳转查看。
 > - **2026-08-13 —— 新增心智庭院 (Mind Garden) 功能**
 >   - **个性化心理与认知沉淀空间**：提供心事篮、日历、照片故事、我的记忆、生活议题与星图观察等功能，帮助用户在多维度的倾诉与记录中渐进式梳理情绪、归纳认知并沉淀个人哲学。
 > - **2026-08-05 —— 新增概念冲刺 (Concept Sprint) 功能**
