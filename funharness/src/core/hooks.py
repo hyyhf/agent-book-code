@@ -67,7 +67,8 @@ class HookRegistry:
             modified_args=current_args if current_args != arguments else None,
         )
 
-    def dispatch_post_tool(self, tool_name, arguments, result):
+    def dispatch_post_tool(self, tool_name, arguments, result, *, is_error=None, changed=None):
+        result = HookText(result, is_error, changed)
         feedbacks = []
         for entry in self._hooks[HookEvent.POST_TOOL_USE]:
             if not self._matches(entry["tool_matcher"], tool_name):
@@ -101,6 +102,14 @@ class HookRegistry:
 
 # ---- Built-in Hooks ----
 
+class HookText(str):
+    """Keep third-party string hooks compatible while conveying explicit status."""
+    def __new__(cls, value, is_error=None, changed=None):
+        obj = super().__new__(cls, value)
+        obj.is_error = is_error
+        obj.changed = changed
+        return obj
+
 def path_normalization_hook(tool_name, arguments):
     modified = arguments.copy()
     changed = False
@@ -124,7 +133,10 @@ def large_file_guard_hook(tool_name, arguments):
 
 def lint_after_write_hook(tool_name, arguments, result):
     filepath = arguments.get("path", "")
-    if filepath.endswith(".py") and "Error" not in result:
+    failed = getattr(result, "is_error", None)
+    if failed is None:
+        failed = "Error" in result or "failed" in result.lower()
+    if filepath.endswith(".py") and not failed and getattr(result, "changed", None) is not False:
         return HookResult(feedback=f"[hook] Python file written: '{filepath}'. Consider running tests.")
     return HookResult()
 
@@ -187,6 +199,13 @@ class LoopDetectionMiddleware(Middleware):
         if not history:
             return context
 
+        # Repeated bounded waits on a live command are intentional scheduling,
+        # not a reasoning loop. Preserve real polling errors for the error guard.
+        if (history[-1]["tool"] in {"tool_runtime_wait", "tool_runtime_status", "tool_runtime_output"}
+                and any(state in history[-1].get("result", "") for state in
+                        ("status=running", "status=queued", "status=cancelling"))):
+            return context
+
         # Repeated calls
         if len(history) >= self.repeat_threshold:
             recent = history[-self.repeat_threshold:]
@@ -197,7 +216,8 @@ class LoopDetectionMiddleware(Middleware):
 
         # Cyclic pattern
         if len(history) >= self.cycle_length * 2:
-            tools = [h["tool"] for h in history[-(self.cycle_length * 2):]]
+            # Reusing a high-frequency tool on different targets/edits is progress.
+            tools = [(h["tool"], h.get("args", {})) for h in history[-(self.cycle_length * 2):]]
             if tools[:self.cycle_length] == tools[self.cycle_length:]:
                 context.setdefault("injections", []).append(
                     f"[LOOP WARNING] Cyclic pattern detected. Break the cycle.")
@@ -206,7 +226,8 @@ class LoopDetectionMiddleware(Middleware):
         if len(history) >= self.max_consecutive_errors:
             recent = history[-self.max_consecutive_errors:]
             errs = ["Error", "Failed", "DENIED", "failed"]
-            if all(any(kw in h.get("result", "") for kw in errs) for h in recent):
+            if all(h["is_error"] if h.get("is_error") is not None else
+                   any(kw in h.get("result", "") for kw in errs) for h in recent):
                 context.setdefault("injections", []).append(
                     f"[LOOP WARNING] {self.max_consecutive_errors} consecutive errors. Stop and reassess.")
                 context["should_stop"] = True
@@ -223,7 +244,8 @@ class SelfVerificationMiddleware(Middleware):
 
     def process(self, context):
         history = context.get("tool_calls_history", [])
-        if history and history[-1]["tool"] in self.VERIFY_TOOLS:
+        if (history and history[-1]["tool"] in self.VERIFY_TOOLS
+                and not history[-1].get("is_error") and history[-1].get("changed") is not False):
             self._write_count += 1
             if self._write_count % self.verify_interval == 0:
                 context.setdefault("injections", []).append(

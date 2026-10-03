@@ -5,10 +5,16 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
+from pathlib import Path
 from threading import Event
 from typing import Callable
 
-from .llm import MODEL, client
+from .llm import MODEL, client, sanitize_messages_for_api, validate_request_size
+from .runtime import RuntimeTaskManager, command_scope, current_commands
+from .file_editing import FileEditSession, file_edit_scope
+from .content import tool_content
+from .context import ContextManager, truncate_tool_results
 
 
 class SubAgent:
@@ -35,6 +41,7 @@ class SubAgent:
         self.llm_client = llm_client or client
         self.tool_registry = tool_registry
         self.messages = [{"role": "system", "content": self._system_prompt()}]
+        self.context_state = {}
 
     def _system_prompt(self) -> str:
         extra = f"\n\nRole instructions:\n{self.instructions}" if self.instructions else ""
@@ -42,10 +49,26 @@ class SubAgent:
             f"You are a focused subagent with role '{self.role}'. "
             "Work in an isolated context. Return concise, actionable results. "
             "Do not claim to have edited files unless a tool result or task text proves it."
+            " Read existing files with tool_read_file before editing; prefer start_line/limit and batch replacements."
+            " On FILE_CHANGED re-read before retrying; do not bypass conflicts with shell writes."
             f"{extra}"
         )
 
-    def run(
+    def run(self, task: str, context: str = "", cancel_event: Event | None = None,
+            should_cancel: Callable[[], bool] | None = None,
+            timeout_seconds: int | float | None = None) -> str:
+        duration = self._MAX_RUNTIME_SECONDS if timeout_seconds is None else timeout_seconds
+        deadline = time.monotonic() + float(duration)
+        runtime = RuntimeTaskManager(root=Path(".funharness/runtime/subagents") / uuid.uuid4().hex)
+        def stopped():
+            return self._should_stop(cancel_event, should_cancel) or time.monotonic() >= deadline
+        try:
+            with command_scope(runtime, stopped), file_edit_scope(FileEditSession(), runtime.work_dir, stopped):
+                return self._run(task, context, cancel_event, should_cancel, timeout_seconds)
+        finally:
+            runtime.shutdown()
+
+    def _run(
         self,
         task: str,
         context: str = "",
@@ -53,13 +76,42 @@ class SubAgent:
         should_cancel: Callable[[], bool] | None = None,
         timeout_seconds: int | float | None = None,
     ) -> str:
-        content = task if not context else f"Context:\n{context}\n\nTask:\n{task}"
-        self.messages.append({"role": "user", "content": content})
+        if context:
+            self.messages.append({"role": "user", "context_kind": "background", "content": f"Context:\n{context}"})
+        self.messages.append({"role": "user", "content": task, "context_kind": "request"})
         deadline = time.time() + float(self._MAX_RUNTIME_SECONDS if timeout_seconds is None else timeout_seconds)
 
         tools = None
         if self.tool_registry is not None:
             tools = self.tool_registry.get_openai_schemas() or None
+
+        context_manager = ContextManager(self.model, self.llm_client, self.context_state)
+
+        def check_cancel():
+            if self._should_stop(cancel_event, should_cancel) or time.time() >= deadline:
+                raise InterruptedError("Subagent cancelled or timed out")
+
+        def invoke(max_tokens):
+            check_cancel()
+            kwargs = {
+                "model": self.model,
+                "messages": sanitize_messages_for_api(self.messages),
+                "temperature": 0.3,
+                "reasoning_effort": "high",
+                "extra_body": {"thinking": {"type": "enabled"}},
+                "timeout": min(60, max(.1, deadline - time.time())),
+                "max_tokens": max_tokens,
+            }
+            if tools:
+                kwargs["tools"] = tools
+            validate_request_size(kwargs)
+            try:
+                return self.llm_client.chat.completions.create(**kwargs)
+            except TypeError as exc:
+                if "timeout" not in str(exc):
+                    raise
+                kwargs.pop("timeout", None)
+                return self.llm_client.chat.completions.create(**kwargs)
 
         for _ in range(self._MAX_ITERATIONS):
             if self._should_stop(cancel_event, should_cancel):
@@ -67,21 +119,10 @@ class SubAgent:
             remaining = deadline - time.time()
             if remaining <= 0:
                 return "(subagent timed out)"
-            kwargs = {
-                "model": self.model,
-                "messages": self.messages,
-                "temperature": 0.3,
-                "reasoning_effort": "high",
-                "extra_body": {"thinking": {"type": "enabled"}},
-                "timeout": min(60, remaining),
-            }
-            if tools:
-                kwargs["tools"] = tools
             try:
-                response = self.llm_client.chat.completions.create(**kwargs)
-            except TypeError:
-                kwargs.pop("timeout", None)
-                response = self.llm_client.chat.completions.create(**kwargs)
+                response = context_manager.run(self.messages, tools, invoke, check_cancel=check_cancel)
+            except InterruptedError:
+                return "(subagent timed out)" if time.time() >= deadline else "(subagent cancelled)"
             if self._should_stop(cancel_event, should_cancel):
                 return "(subagent cancelled)"
             choice = response.choices[0]
@@ -106,6 +147,13 @@ class SubAgent:
             self.messages.append(assistant_msg)
 
             if not msg.tool_calls:
+                runtime, stopped = current_commands()
+                pending = runtime.pending_commands()
+                if pending:
+                    observation = runtime.wait(pending[0].runtime_id, 30000, stopped)
+                    self.messages.append({"role": "user", "context_kind": "background",
+                                          "content": "[COMMAND RUNTIME] Review before completion.\n" + observation})
+                    continue
                 return msg.content or ""
 
             for tc in msg.tool_calls:
@@ -125,7 +173,7 @@ class SubAgent:
                 else:
                     try:
                         raw = func(**args)
-                        tool_result = str(raw)
+                        tool_result = tool_content(raw)
                     except Exception as exc:
                         tool_result = f"Tool error ({tool_name}): {type(exc).__name__}: {exc}"
 
@@ -134,6 +182,8 @@ class SubAgent:
                     "tool_call_id": tc.id,
                     "content": tool_result,
                 })
+
+            self.messages = truncate_tool_results(self.messages)
 
         last_content = ""
         for message in reversed(self.messages):

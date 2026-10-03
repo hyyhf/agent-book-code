@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +11,114 @@ from funharness.src.agent import FunHarnessAgent
 
 
 class AgentLoopMiddlewareTests(unittest.TestCase):
+    def test_guarded_file_edits_recover_and_emit_structured_status(self) -> None:
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            agent = None
+            os.chdir(tmp)
+            try:
+                agent = FunHarnessAgent(mode="auto", llm_client=object())
+                target = Path(tmp) / "error_in_name.py"
+                target.write_bytes(b"first\nsecond\n")
+                def call(name, **args):
+                    return agent._execute_tool(name, json.dumps(args))
+                output, feedback, display = call("tool_replace_in_file", path=str(target), old_text="first", new_text="FIRST")
+                self.assertIn("FILE_NOT_READ", output)
+                self.assertNotIn("Python file written", feedback)
+                call("tool_read_file", path=str(target), start_line=1, limit=1)
+                output, feedback, display = call("tool_replace_in_file", path=str(target), replacements=[
+                    {"old_text": "first", "new_text": "FIRST"}, {"old_text": "second", "new_text": "SECOND"},
+                ])
+                self.assertTrue(display["changed"])
+                self.assertIn("Python file written", feedback)
+                self.assertNotIn("hunks", str(output))
+                self.assertEqual(target.read_bytes(), b"FIRST\nSECOND\n")
+                output, feedback, display = call("tool_replace_in_file", path=str(target), old_text="FIRST", new_text="FIRST")
+                self.assertFalse(display["changed"])
+                self.assertNotIn("Python file written", feedback)
+                malformed, _, _ = call("tool_replace_in_file", path=str(target), replacements=[{"old_text": "FIRST"}])
+                self.assertIn("INVALID_ARGUMENT", malformed)
+            finally:
+                if agent:
+                    agent.runtime.shutdown()
+                    agent.scheduler.stop()
+                os.chdir(previous)
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell dispatch")
+    def test_powershell_selection_reaches_executor_through_agent_permissions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cwd = os.getcwd()
+            agent = None
+            os.chdir(tmp)
+            try:
+                agent = FunHarnessAgent(mode="auto", llm_client=object())
+                output, _, _ = agent._execute_tool("tool_run_command", json.dumps({
+                    "command": "[pscustomobject]@{Name='PS-FROM-AGENT'} | Format-Table",
+                    "shell": "powershell", "yield_time_ms": 10000,
+                }))
+                self.assertIn("status=done", output)
+                self.assertIn("PS-FROM-AGENT", output)
+                self.assertEqual(agent.runtime.list()[0].shell, "powershell")
+                self.assertIn("shell=pwsh", agent._system_prompt)
+            finally:
+                if agent:
+                    agent.runtime.shutdown()
+                    agent.scheduler.stop()
+                os.chdir(old_cwd)
+
+    def test_yielded_command_must_finish_before_agent_completes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cwd = os.getcwd()
+            agent = None
+            os.chdir(tmp)
+            try:
+                agent = FunHarnessAgent(mode="auto", llm_client=object())
+                command = f'"{sys.executable}" -c "import time; time.sleep(.3); print(\'VERIFIED\')"'
+                call = {"role": "assistant", "content": None, "tool_calls": [{
+                    "id": "call_cmd", "type": "function", "function": {
+                        "name": "tool_run_command", "arguments": json.dumps({
+                            "command": command, "yield_time_ms": 0,
+                        }),
+                    },
+                }]}
+                final = {"role": "assistant", "content": "Command complete and its output was reviewed."}
+                with patch.object(agent, "_process_llm_stream_with_retry", side_effect=[call, final, final]):
+                    agent.run("execute and verify")
+                self.assertEqual(agent.last_run_stop_reason, "completed")
+                self.assertEqual(len(agent.runtime.list()), 1)
+                self.assertEqual(agent.runtime.list()[0].status.value, "done")
+                self.assertTrue(any("VERIFIED" in str(m.get("content")) for m in agent.messages))
+            finally:
+                if agent:
+                    agent.runtime.shutdown()
+                    agent.scheduler.stop()
+                os.chdir(old_cwd)
+
+    def test_stop_cancels_a_yielded_command_and_returns_promptly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cwd = os.getcwd()
+            agent = None
+            os.chdir(tmp)
+            try:
+                agent = FunHarnessAgent(mode="auto", llm_client=object())
+                command = f'"{sys.executable}" -c "import time; time.sleep(30)"'
+                result, _, _ = agent._execute_tool("tool_run_command", json.dumps({
+                    "command": command, "yield_time_ms": 0, "timeout": 900,
+                }))
+                self.assertIn("runtime_id=", result)
+                start = time.monotonic()
+                agent.request_interrupt()
+                self.assertLess(time.monotonic() - start, .5)
+                task = agent.runtime.list()[0]
+                outcome = agent.runtime.wait(task.runtime_id, 5000)
+                self.assertIn("status=cancelled", outcome)
+            finally:
+                if agent:
+                    agent.runtime.shutdown()
+                    agent.scheduler.stop()
+                os.chdir(old_cwd)
+
     def test_incomplete_chunked_stream_is_retried_in_the_same_agent_turn(self) -> None:
         statuses = []
         completed = {
@@ -48,7 +157,7 @@ class AgentLoopMiddlewareTests(unittest.TestCase):
         self.assertEqual(call.call_count, 2)
         self.assertEqual(
             [item for item in agent.messages if item.get("role") == "user"],
-            [{"role": "user", "content": "继续当前任务"}],
+            [{"role": "user", "content": "继续当前任务", "context_kind": "request"}],
         )
         self.assertEqual(agent.messages[-1], completed)
         self.assertTrue(any("正在自动重连" in item for item in statuses))
@@ -94,7 +203,7 @@ class AgentLoopMiddlewareTests(unittest.TestCase):
 
                 result, _, _ = agent._execute_tool(
                     "tool_run_command",
-                    json.dumps({"command": command, "timeout": 1}),
+                    json.dumps({"command": command, "timeout": 1, "yield_time_ms": 10000}),
                 )
             finally:
                 if agent is not None:

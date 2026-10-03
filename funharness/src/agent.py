@@ -12,21 +12,24 @@ import time
 from contextvars import ContextVar
 from pathlib import Path
 
-from .core.tools import ToolRegistry, ToolResult, registry
+from .core.tools import (
+    ToolRegistry, ToolResult, registry, tool_runtime_run, tool_runtime_status,
+    tool_runtime_output, tool_runtime_wait, tool_runtime_cancel,
+)
+from .core.content import Content, append_text, content_text, tool_content
 from .core.attachments import AttachmentManager, DEFAULT_ATTACHMENT_MAX_CHARS
 from .core.llm import call_with_retry, process_stream_response, MODEL, client
 from .core.system_prompt import build_system_prompt, build_environment_block, build_tools_guide
 from .core.context import (
     CostTracker, estimate_tokens, build_context_block,
-    truncate_tool_results, compact_conversation, should_compact,
-    CONTEXT_SOFT_LIMIT,
+    truncate_tool_results, ContextManager,
 )
 from .core.memory import init_memory, read_memory, save_memory, search_memory
 from .core.persona import PersonaStore
 from .core.skills import SkillLoader
 from .core.session import Session, SessionManager
 from .core.permissions import (
-    PermissionManager, PermissionMode, ApprovalFlow, SandboxExecutor, classify_risk,
+    PermissionManager, PermissionMode, ApprovalFlow, classify_risk,
 )
 from .core.hooks import (
     HookRegistry, HookAction, init_hooks, init_middleware, MiddlewareChain,
@@ -35,7 +38,8 @@ from .core.tasks import (
     TaskList, Task, TaskStatus, ProgressTracker, GitTracker,
     plan_tasks, pick_next_task, format_task_for_agent, _parse_list,
 )
-from .core.runtime import RuntimeTaskManager
+from .core.runtime import RuntimeTaskManager, command_scope
+from .core.file_editing import FileEditSession, file_edit_scope
 from .core.schedule import ScheduleManager
 from .core.team import TeamManager
 from .core.subagent import SubAgent
@@ -86,17 +90,6 @@ _current_agent = ContextVar("funharness_current_agent", default=None)
 def _active_agent():
     """Return the agent currently executing a tool call, if any."""
     return _current_agent.get()
-
-
-def _coerce_tool_timeout(value, default: int | None = 30) -> int:
-    fallback = default if isinstance(default, int) and default > 0 else 30
-    if value is None or isinstance(value, bool):
-        return fallback
-    try:
-        timeout = int(value)
-    except (TypeError, ValueError):
-        return fallback
-    return max(1, min(timeout, 24 * 60 * 60))
 
 
 def _parse_key_values(text: str) -> dict[str, str]:
@@ -185,17 +178,22 @@ def tool_list_attachments() -> str:
 
 
 @registry.tool(category="file")
-def tool_read_attachment(attachment_id: str, max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS) -> str:
-    """Read an attached file by attachment id, extracting text from supported formats.
+def tool_read_attachment(
+    attachment_id: str,
+    max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS,
+    detail: str = "auto",
+) -> str | ToolResult:
+    """Read an attached file, returning visual input for images or extracted document text.
 
     Args:
         attachment_id: Attachment id from tool_list_attachments or the attached files block
         max_chars: Maximum characters to return before truncating
+        detail: Image detail: auto, low, high, or original; ignored for documents
     """
     agent = _active_agent()
     if agent is None:
         return "(no active agent)"
-    return agent.attachments.read(attachment_id, max_chars=max_chars)
+    return agent.attachments.read(attachment_id, max_chars=max_chars, detail=detail)
 
 
 @registry.tool(category="task")
@@ -323,64 +321,6 @@ def tool_task_update(task_id: str, status: str = "", owner: str = "",
     if agent is None:
         return "(no active agent)"
     return agent._update_task(task_id, status, owner, notes, artifacts, error)
-
-
-@registry.tool(category="task")
-def tool_runtime_run(command: str, description: str = "", timeout: int = 300) -> str:
-    """Run a slow shell command in the background runtime lane.
-
-    Args:
-        command: Shell command to execute
-        description: Short description
-        timeout: Timeout in seconds
-    """
-    agent = _active_agent()
-    if agent is None:
-        return "(no active agent)"
-    runtime_id = agent.runtime.submit_command(command, description, timeout)
-    return f"Runtime task started: {runtime_id}"
-
-
-@registry.tool(category="task")
-def tool_runtime_status(runtime_id: str = "") -> str:
-    """Show background runtime task status.
-
-    Args:
-        runtime_id: Optional runtime task ID
-    """
-    agent = _active_agent()
-    if agent is None:
-        return "(no active agent)"
-    if not runtime_id:
-        return agent.runtime.summary()
-    task = agent.runtime.get(runtime_id)
-    return json.dumps(task.to_dict(), ensure_ascii=False, indent=2) if task else f"Unknown runtime task: {runtime_id}"
-
-
-@registry.tool(category="task")
-def tool_runtime_output(runtime_id: str) -> str:
-    """Read full output for a runtime task.
-
-    Args:
-        runtime_id: Runtime task ID
-    """
-    agent = _active_agent()
-    if agent is None:
-        return "(no active agent)"
-    return agent.runtime.output(runtime_id)
-
-
-@registry.tool(category="task")
-def tool_runtime_cancel(runtime_id: str) -> str:
-    """Cancel a running background runtime task.
-
-    Args:
-        runtime_id: Runtime task ID
-    """
-    agent = _active_agent()
-    if agent is None:
-        return "(no active agent)"
-    return agent.runtime.cancel(runtime_id)
 
 
 @registry.tool(category="schedule")
@@ -726,6 +666,7 @@ class FunHarnessAgent:
         self.progress_tracker = ProgressTracker(".")
         self.git_tracker = GitTracker(".")
         self.runtime = RuntimeTaskManager(work_dir=".")
+        self.file_edits = FileEditSession()
         self.scheduler = ScheduleManager(on_fire=self._run_scheduled_prompt)
         self.team = TeamManager(runtime=self.runtime, model=self.model, llm_client=self.llm_client,
                                 tool_registry=registry.subset(["file", "system", "search", "web", "memory"]))
@@ -747,8 +688,6 @@ class FunHarnessAgent:
         self._interrupt_event = threading.Event()
         self._active_stream = None
         self._active_stream_lock = threading.Lock()
-        self._active_sandbox: SandboxExecutor | None = None
-        self._active_sandbox_lock = threading.Lock()
 
     def _build_system_prompt(self):
         memory_text = read_memory()
@@ -814,7 +753,7 @@ class FunHarnessAgent:
                 lines.append(
                     f"[runtime:{event['runtime_id']}] {event['status']}\n"
                     f"{event.get('preview', '')}\n"
-                    f"Full output: {event.get('output_file', '')}"
+                    f"Output snapshot: {event.get('output_file', '')}"
                 )
             elif event.get("type") == "scheduled_prompt":
                 runtime = f"\nRuntime task: {event.get('runtime_id')}" if event.get("runtime_id") else ""
@@ -843,7 +782,8 @@ class FunHarnessAgent:
             "tools": len(self.tool_registry),
             "trace_id": self.tracer.trace_id,
             "messages": len(self.messages),
-            "tokens": estimate_tokens(self.messages),
+            "tokens": estimate_tokens(self.messages, self.tool_registry.get_openai_schemas()),
+            "context_budget": self._context_manager().input_budget,
             "cost": self.cost_tracker.summary(),
             "tasks_ready": len(self.task_list.ready()) if self.task_list else 0,
             "teammates": len(self.team.list()),
@@ -876,9 +816,11 @@ class FunHarnessAgent:
             "/cost": lambda: f"{self.cost_tracker.summary()}",
             "/context": lambda: (
                 f"System prompt: {len(self._system_prompt)} chars\n"
-                f"Total context: ~{estimate_tokens(self.messages)} tokens\n"
+                f"Total context: ~{estimate_tokens(self.messages, self.tool_registry.get_openai_schemas())} tokens (including tools)\n"
                 f"Messages: {len(self.messages)}\n"
-                f"Soft limit: {CONTEXT_SOFT_LIMIT:,} chars"
+                f"Input budget: {self._context_manager().input_budget:,} tokens\n"
+                f"Context window: {self._context_manager().window:,} tokens\n"
+                f"Output reserve: {self._context_manager().max_tokens:,} tokens"
             ),
             "/save": lambda: self._save_session(),
             "/memory": lambda: read_memory()[:800],
@@ -1481,8 +1423,8 @@ class FunHarnessAgent:
     def request_interrupt(self):
         """Ask the current agent turn and any running command tool to stop."""
         self._interrupt_event.set()
+        self.runtime.cancel_commands(include_background=False)
         self._close_active_stream()
-        self._interrupt_active_sandbox()
 
     def clear_interrupt(self):
         """Reset interrupt state before a new turn."""
@@ -1514,21 +1456,6 @@ class FunHarnessAgent:
             except Exception:
                 pass
 
-    def _set_active_sandbox(self, sandbox: SandboxExecutor) -> None:
-        with self._active_sandbox_lock:
-            self._active_sandbox = sandbox
-
-    def _clear_active_sandbox(self, sandbox: SandboxExecutor) -> None:
-        with self._active_sandbox_lock:
-            if self._active_sandbox is sandbox:
-                self._active_sandbox = None
-
-    def _interrupt_active_sandbox(self) -> None:
-        with self._active_sandbox_lock:
-            sandbox = self._active_sandbox
-        if sandbox is not None:
-            sandbox.interrupt()
-
     def _run_interruptible_call(self, fn):
         result = {}
         done = threading.Event()
@@ -1556,6 +1483,27 @@ class FunHarnessAgent:
         on_reasoning_token=None,
         on_reasoning_done=None,
     ):
+        def persist():
+            self.current_session.messages = self.messages
+            self.session_mgr.save(self.current_session)
+
+        return self._context_manager().run(
+            self.messages, tools,
+            lambda max_tokens: self._process_llm_stream_transport_retry(
+                tools, max_tokens=max_tokens, on_reasoning_token=on_reasoning_token,
+                on_reasoning_done=on_reasoning_done,
+            ),
+            before_compact=lambda messages: self.session_mgr.archive_context(self.current_session, messages),
+            after_compact=persist, on_status=self._emit_status,
+            check_cancel=self._raise_if_interrupted, compact_call=self._run_interruptible_call,
+        )
+
+    def _context_manager(self):
+        return ContextManager(self.model, self.llm_client, self.current_session.context_state)
+
+    def _process_llm_stream_transport_retry(
+        self, tools, *, max_tokens, on_reasoning_token=None, on_reasoning_done=None,
+    ):
         for attempt in range(1, STREAM_READ_MAX_ATTEMPTS + 1):
             self._raise_if_interrupted()
             stream = self._run_interruptible_call(
@@ -1565,6 +1513,7 @@ class FunHarnessAgent:
                     stream=True,
                     model=self.model,
                     llm_client=self.llm_client,
+                    max_tokens=max_tokens,
                 )
             )
             self._set_active_stream(stream)
@@ -1597,7 +1546,18 @@ class FunHarnessAgent:
                         pass
         raise RuntimeError("模型流式响应重试次数已用尽")
 
-    def run(self, user_input: str, *, reset_interrupt: bool = True):
+    def prepare_user_message(self, user_input: Content, *, attachments: list[dict] | None = None) -> dict:
+        """Record an accepted GUI turn before its background inference starts."""
+        attachment_context = self._attachment_context()
+        message_content = append_text(user_input, f"\n\n{attachment_context}") if attachment_context else user_input
+        message = {"role": "user", "content": message_content, "context_kind": "request"}
+        if attachments is not None:
+            message.update({"attachments": attachments, "display_content": content_text(user_input)})
+        self.messages.append(message)
+        self.current_session.messages = self.messages
+        return message
+
+    def run(self, user_input: Content, *, reset_interrupt: bool = True, prepared_message: dict | None = None):
         """Execute one agent turn with the given user input.
 
         This is an async-compatible generator that yields events:
@@ -1607,20 +1567,20 @@ class FunHarnessAgent:
             self.clear_interrupt()
         self.last_run_stop_reason = "running"
         self.cost_tracker.mark_turn_start()
-        attachment_context = self._attachment_context()
-        message_content = user_input
-        if attachment_context:
-            message_content = f"{user_input}\n\n{attachment_context}"
-        self.messages.append({"role": "user", "content": message_content})
+        if prepared_message is None:
+            self.prepare_user_message(user_input)
+        elif not any(message is prepared_message for message in self.messages):
+            raise ValueError("Prepared user message does not belong to this session")
         tools = self.tool_registry.get_openai_schemas()
         turn_history_start = len(self.tool_calls_history)
 
         loop_span = self.tracer.start_span(SpanKind.AGENT_LOOP, "agent_loop",
-                                           metadata={"input": user_input[:100]})
+                                           metadata={"input": content_text(user_input)[:100]})
 
         for iteration in range(1, MAX_ITERATIONS + 1):
             self._raise_if_interrupted()
             self._drain_external_events(inject=True)
+            self.messages = truncate_tool_results(self.messages)
             # Middleware chain
             mw_context = {
                 "messages": self.messages, "iteration": iteration,
@@ -1648,14 +1608,6 @@ class FunHarnessAgent:
                 )
                 self.messages.append(msg)
                 break
-
-            # Context compaction
-            if should_compact(self.messages):
-                before = len(self.messages)
-                self.messages = compact_conversation(
-                    self.messages, model=self.model, llm_client=self.llm_client
-                )
-                self._emit_status(f"Context compacted: {before} -> {len(self.messages)} messages")
 
             # LLM call with tracing
             llm_start = time.time()
@@ -1690,6 +1642,16 @@ class FunHarnessAgent:
 
             # Check if model wants to use tools
             if "tool_calls" not in msg or not msg["tool_calls"]:
+                pending = self.runtime.pending_commands()
+                if pending:
+                    self._emit_status(f"命令仍在运行，等待结果：{pending[0].runtime_id}")
+                    observation = self.runtime.wait(pending[0].runtime_id, 30000, self.is_interrupted)
+                    self._raise_if_interrupted()
+                    self.messages.append({
+                        "role": "user", "context_kind": "background",
+                        "content": "[COMMAND RUNTIME] Review command results before completion.\n" + observation,
+                    })
+                    continue
                 # PreCompletion hook
                 assistant_text = msg.get("content", "") or ""
                 pre_completion = self.hook_registry.dispatch_pre_completion(assistant_text, self.messages)
@@ -1724,19 +1686,23 @@ class FunHarnessAgent:
                 result, hook_feedback, display = self._execute_tool(name, args_str)
                 interrupted_after_tool = self.is_interrupted()
 
-                self._emit_tool_result(name, result, hook_feedback, display)
+                result_text = content_text(result)
+                self._emit_tool_result(name, result_text, hook_feedback, display)
 
                 try:
                     parsed_args = json.loads(args_str)
                 except Exception:
                     parsed_args = {}
-                self.tool_calls_history.append({
-                    "tool": name, "args": parsed_args, "result": result[:500],
-                })
+                history_entry = {
+                    "tool": name, "args": parsed_args, "result": result_text[:500],
+                }
+                if display and display.get("kind") == "file_edit":
+                    history_entry.update(is_error=display.get("is_error", False), changed=display.get("changed"))
+                self.tool_calls_history.append(history_entry)
 
                 tool_content = result
                 if hook_feedback:
-                    tool_content += f"\n\n[Hook Feedback] {hook_feedback}"
+                    tool_content = append_text(tool_content, f"\n\n[Hook Feedback] {hook_feedback}")
 
                 self.messages.append({
                     "role": "tool", "tool_call_id": tc["id"], "content": tool_content,
@@ -1817,50 +1783,43 @@ class FunHarnessAgent:
         tool_span = self.tracer.start_span(SpanKind.TOOL_CALL, tool_name)
 
         display = None
-        if tool_name == "tool_run_command":
-            timeout = _coerce_tool_timeout(
-                args.get("timeout"),
-                self.approval_flow.sandbox.timeout,
-            )
-            sandbox = SandboxExecutor(
-                work_dir=self.approval_flow.sandbox.work_dir,
-                timeout=timeout,
-                max_output=self.approval_flow.sandbox.max_output,
-            )
-            self._set_active_sandbox(sandbox)
+        explicit_error = None
+        try:
+            self._raise_if_interrupted()
+            token = _current_agent.set(self)
             try:
-                result = sandbox.execute(
-                    args.get("command", ""),
-                    should_interrupt=self.is_interrupted,
-                )
-            finally:
-                self._clear_active_sandbox(sandbox)
-        else:
-            try:
-                self._raise_if_interrupted()
-                token = _current_agent.set(self)
-                try:
+                self.runtime.work_dir = Path(self.approval_flow.sandbox.work_dir).resolve()
+                with command_scope(self.runtime, self.is_interrupted), file_edit_scope(
+                    self.file_edits, self.runtime.work_dir, self.is_interrupted,
+                    owner=(self.current_session.id, id(self.current_session)),
+                ):
                     raw_result = func(**args)
-                    if isinstance(raw_result, ToolResult):
-                        result = raw_result.content
-                        display = raw_result.display
-                    else:
-                        result = str(raw_result)
-                finally:
-                    _current_agent.reset(token)
-                self._raise_if_interrupted()
-            except InterruptedError:
-                raise
-            except Exception as e:
-                result = f"Tool execution failed ({tool_name}): {e}"
+                if isinstance(raw_result, ToolResult):
+                    result = raw_result.content
+                    display = raw_result.display
+                    explicit_error = raw_result.is_error
+                else:
+                    result = tool_content(raw_result)
+            finally:
+                _current_agent.reset(token)
+            # The loop emits the tool result before honouring interruption.
+        except InterruptedError:
+            raise
+        except Exception as e:
+            result = f"Tool execution failed ({tool_name}): {e}"
 
         tool_duration = (time.time() - tool_start) * 1000
-        success = "Error" not in result and "Failed" not in result
+        result_text = content_text(result)
+        success = not explicit_error if explicit_error is not None else not any(
+            marker in result_text.lower() for marker in ("error", "failed"))
         self.tracer.finish_span(tool_span, status="ok" if success else "error")
-        self.logger.log_tool_call(tool_name, tool_duration, success, len(result))
+        self.logger.log_tool_call(tool_name, tool_duration, success, len(result_text))
 
         # PostToolUse hook
-        post_result = self.hook_registry.dispatch_post_tool(tool_name, args, result)
+        post_result = self.hook_registry.dispatch_post_tool(
+            tool_name, args, result_text, is_error=explicit_error,
+            changed=display.get("changed") if display and display.get("kind") == "file_edit" else None,
+        )
         hook_feedback = post_result.feedback
         if pre_result.feedback:
             hook_feedback = (pre_result.feedback + "\n" + hook_feedback) if hook_feedback else pre_result.feedback

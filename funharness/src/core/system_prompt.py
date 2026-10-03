@@ -9,6 +9,7 @@ import sys
 from datetime import datetime
 
 from .tools import ToolRegistry
+from .command_shells import available_shell_names
 
 
 IDENTITY_BLOCK = """\
@@ -22,6 +23,46 @@ Core behaviors:
 - Provide a concise summary when the task is complete.
 - When uncertain, ask the user for clarification instead of guessing.
 - Prefer precise file edits over full-file rewrites.
+- To inspect a local image or a screenshot created by your code, call
+  tool_read_file. It detects images and returns actual visual input.
+- A path, attachment preview or command output alone does not show you pixels.
+  Read the image before making visual claims. Re-read after regenerating it.
+- For tiny text or large screenshots, use high detail or create focused crops.
+
+Command execution:
+- tool_run_command waits briefly and returns either completion or a runtime_id.
+  status=running is not success. Never rerun it just because the wait returned.
+- Use tool_runtime_wait(runtime_id, yield_time_ms=30000) before dependent steps;
+  use tool_runtime_output/status to inspect progress and tool_runtime_cancel to stop.
+- timeout is the total process lifetime, not the wait duration. Polling does not
+  extend it. Default lifetime is 300 seconds; specify more for large builds.
+- For an intentional service use background=true, timeout=0. Keep its process
+  in the foreground; do not use start, nohup, shell background suffixes, detached
+  terminals, Start-Process, Start-Job or daemonize to launch a service.
+  The runtime owns it until cancellation or backend shutdown.
+- Commands are non-interactive: stdin is closed. Use non-interactive flags and
+  never wait for a password prompt. shell=default preserves Windows cmd.exe / POSIX sh.
+- For PowerShell scripts explicitly set shell=pwsh (PowerShell 7, when available)
+  or shell=powershell (Windows PowerShell 5.1). Pass the script directly, including
+  multiline code; do not wrap it in an extra cmd /c or powershell -Command string.
+  PowerShell's leading & call operator is valid for invoking a quoted executable path.
+  PowerShell 5.1 does not support &&/||; use shell=pwsh for those operators.
+  Cmdlet errors stop the script; the last native program's exit code is preserved.
+  Use explicit exit 0 after handling an expected nonzero native code.
+  Shell variables and working-directory changes do not persist across commands.
+  Avoid filtering away error output.
+
+File editing:
+- Read existing files before changing them. For code, use tool_read_file with
+  start_line and limit to inspect a small region instead of repeatedly reading everything.
+- Batch independent changes to one file in one tool_replace_in_file call using replacements.
+  Each old_text is matched against the original file and must be unique and non-overlapping.
+  Keep anchors as short as possible while unique. Supply new_text explicitly (empty means delete).
+- Multiple matches are an error unless replace_all=true is explicitly requested.
+  On FILE_CHANGED, re-read the affected lines and reconsider the edit before retrying.
+  Success includes changed=false for a no-op; do not rewrite a file just to verify it.
+- Existing files read only through a command need tool_read_file before a guarded edit.
+  Do not bypass an edit conflict with tool_write_file or a shell overwrite.
 
 Task management:
 - Use tool_view_tasks to see the current task list and progress.
@@ -74,11 +115,12 @@ def build_environment_block(cwd: str | None = None) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     os_info = f"{platform.system()} {platform.release()}"
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    shell = "PowerShell" if platform.system() == "Windows" else "bash"
+    shell = "cmd.exe" if platform.system() == "Windows" else "/bin/sh"
     return f"""\
 # Environment
 - Operating System: {os_info}
 - Default Shell: {shell}
+- Available command shells (tool_run_command shell parameter): {', '.join(available_shell_names())}
 - Python: {py_ver}
 - Current Time: {now}
 - Working Directory: {cwd}"""

@@ -10,8 +10,12 @@ from threading import Event
 from typing import Any, Callable
 
 from ..llm import MODEL, call_with_retry, client, process_stream_response
-from ..permissions import SandboxExecutor
-from ..tools import ToolRegistry, registry as global_tool_registry
+from ..runtime import RuntimeTaskManager, command_scope, current_commands
+from ..file_editing import FileEditSession, file_edit_scope
+from ..attachments import DEFAULT_ATTACHMENT_MAX_CHARS, read_document
+from ..content import Content, content_text, tool_content
+from ..context import ContextManager, truncate_tool_results
+from ..tools import ToolRegistry, tool_read_file, tool_write_file, registry as global_tool_registry
 from .context_builder import GroupContextBuilder
 from .models import AgentGroup, AgentProfile, GroupAgentRun, GroupAgentSession, GroupArtifact, GroupMember, GroupMessage
 from .store import GroupStore
@@ -41,7 +45,19 @@ class GroupAgentRunner:
         self.skill_loader = skill_loader
         self.event_sink = event_sink
 
-    def run(
+    def run(self, *, group: AgentGroup, member: GroupMember, profile: AgentProfile,
+            session: GroupAgentSession, run: GroupAgentRun, trigger: GroupMessage,
+            cancel_event: Event) -> str:
+        scratch = self._group_scratch_path(group.id, member.id)
+        runtime = RuntimeTaskManager(root=scratch / ".runtime" / run.id, work_dir=scratch)
+        try:
+            with command_scope(runtime, cancel_event.is_set), file_edit_scope(FileEditSession(), scratch, cancel_event.is_set):
+                return self._run(group=group, member=member, profile=profile, session=session,
+                                 run=run, trigger=trigger, cancel_event=cancel_event)
+        finally:
+            runtime.shutdown()
+
+    def _run(
         self,
         *,
         group: AgentGroup,
@@ -58,14 +74,25 @@ class GroupAgentRunner:
             "You are a careful, practical FunHarness group agent. "
             "Keep your public reply concise and useful. "
             "Use tools when they help inspect the workspace, search the web, recall memory, or save concrete deliverables."
+            f"\nYour display name: {member.display_name}\nYour role: {profile.role}\nRole instructions:\n{profile.instructions or '(none)'}"
         )
         messages = [
             {"role": "system", "content": system},
             *session.messages[-8:],
-            {"role": "user", "content": context},
+            {"role": "user", "context_kind": "background", "content": context},
+            {"role": "user", "content": trigger.content, "context_kind": "request"},
         ]
         registry = self._tool_registry(group, member, profile, run)
         tools = registry.get_openai_schemas() or None
+        context_manager = ContextManager(self.model, self.llm_client, session.context_state)
+
+        def check_cancel():
+            if cancel_event.is_set():
+                raise InterruptedError("Group agent cancelled")
+
+        def persist_context():
+            session.messages = self._compact_messages(messages)
+            self.store.save_session(session)
 
         for _ in range(self._MAX_ITERATIONS):
             if cancel_event.is_set():
@@ -98,13 +125,6 @@ class GroupAgentRunner:
                     "message": stream_message.to_dict(),
                 })
 
-            stream = call_with_retry(
-                messages,
-                tools or [],
-                stream=True,
-                model=self.model,
-                llm_client=self.llm_client,
-            )
             tool_generation_base = len(run.tool_calls)
             tool_gen_records: dict[int, dict[str, Any]] = {}
 
@@ -131,14 +151,37 @@ class GroupAgentRunner:
                     "tool_call": self._tool_record_snapshot(record),
                 })
 
-            msg = process_stream_response(
-                stream,
-                on_token=on_token,
-                on_tool_gen=on_tool_gen,
-                should_interrupt=cancel_event.is_set,
-            )
+            def invoke(max_tokens):
+                tool_gen_records.clear()
+                if stream_message is not None:
+                    # Replace a partial failed stream rather than appending its
+                    # prefix again on recovery. No tools have executed yet.
+                    stream_message.content = ""
+                    self.store.update_message(stream_message)
+                stream = call_with_retry(messages, tools or [], stream=True,
+                    model=self.model, llm_client=self.llm_client, max_tokens=max_tokens)
+                try:
+                    return process_stream_response(stream, on_token=on_token,
+                        on_tool_gen=on_tool_gen, should_interrupt=cancel_event.is_set)
+                finally:
+                    close = getattr(stream, "close", None)
+                    if callable(close):
+                        close()
+
+            try:
+                msg = context_manager.run(messages, tools, invoke,
+                    after_compact=persist_context, check_cancel=check_cancel)
+            except InterruptedError:
+                return "(cancelled)"
             messages.append(msg)
             if not msg.get("tool_calls"):
+                runtime, stopped = current_commands()
+                pending = runtime.pending_commands()
+                if pending:
+                    observation = runtime.wait(pending[0].runtime_id, 30000, stopped)
+                    messages.append({"role": "user", "context_kind": "background",
+                                     "content": "[COMMAND RUNTIME] Review before completion.\n" + observation})
+                    continue
                 output = msg.get("content") or ""
                 session.messages = self._compact_messages(messages)
                 session.private_context_summary = self._next_summary(session.private_context_summary, trigger.content, output)
@@ -173,7 +216,8 @@ class GroupAgentRunner:
                     "tool_call": self._tool_record_snapshot(tool_record),
                 })
                 result = self._call_tool(registry, name, arguments)
-                tool_record["result"] = result
+                result_text = content_text(result)
+                tool_record["result"] = result_text
                 tool_record["status"] = "done"
                 tool_record["finished_at"] = time.time()
                 self.store.save_run(run)
@@ -182,10 +226,11 @@ class GroupAgentRunner:
                     "member_id": member.id,
                     "run_id": run.id,
                     "name": name,
-                    "result": result[:4000],
+                    "result": result_text[:4000],
                     "tool_call": self._tool_record_snapshot(tool_record),
                 })
                 messages.append({"role": "tool", "tool_call_id": tool_call["id"], "content": result})
+            messages = truncate_tool_results(messages)
         return "(reached max group agent iterations)"
 
     def _tool_registry(self, group: AgentGroup, member: GroupMember, profile: AgentProfile, run: GroupAgentRun) -> ToolRegistry:
@@ -204,6 +249,8 @@ class GroupAgentRunner:
             "tool_grep_search",
             "tool_replace_in_file",
             "tool_run_command",
+            "tool_runtime_run", "tool_runtime_status", "tool_runtime_output",
+            "tool_runtime_wait", "tool_runtime_cancel",
             "tool_list_skills",
             "tool_load_skill",
             "tool_web_search",
@@ -239,6 +286,29 @@ class GroupAgentRunner:
         self._scope_tool(inherited, "tool_list_skills", lambda _func: lambda: self._list_selected_skills())
         self._scope_tool(inherited, "tool_load_skill", lambda _func: lambda name: self._load_selected_skill(name))
         scratch = self._group_scratch_path(group.id, member.id)
+        # Optional file/search categories must retain the same group boundary.
+        self._scope_tool(
+            inherited, "tool_read_file",
+            lambda func: lambda path, max_chars=DEFAULT_ATTACHMENT_MAX_CHARS, detail="auto", start_line=1, limit=None: func(
+                str(self._safe_group_workspace_path(group.id, path)), max_chars=max_chars, detail=detail,
+                start_line=start_line, limit=limit,
+            ),
+        )
+        self._scope_tool(
+            inherited, "tool_list_directory",
+            lambda func: lambda path: func(str(self._safe_group_workspace_path(group.id, path))),
+        )
+        self._scope_tool(
+            inherited, "tool_find_files",
+            lambda func: lambda pattern="**/*", path=".", max_results=200: func(
+                pattern=pattern, path=str(self._safe_group_workspace_path(group.id, path)), max_results=max_results,
+            ),
+        )
+        self._scope_tool(
+            inherited, "tool_write_file",
+            lambda func: lambda path, content, expected_revision=None: func(
+                str(self._safe_group_path(group.id, member.id, path)), content, expected_revision),
+        )
         self._scope_tool(
             inherited,
             "tool_grep_search",
@@ -254,19 +324,14 @@ class GroupAgentRunner:
         self._scope_tool(
             inherited,
             "tool_replace_in_file",
-            lambda func: lambda path, old_text="", new_text="", replacements=None: func(
+            lambda func: lambda path, old_text=None, new_text=None, replacements=None, replace_all=False, expected_count=None, expected_revision=None: func(
                 str(self._safe_group_path(group.id, member.id, path)),
                 old_text=old_text,
                 new_text=new_text,
                 replacements=replacements,
+                replace_all=replace_all, expected_count=expected_count, expected_revision=expected_revision,
             ),
         )
-        self._scope_tool(
-            inherited,
-            "tool_run_command",
-            lambda _func: lambda command: SandboxExecutor(work_dir=scratch).execute(command),
-        )
-
         store = self.store
 
         @inherited.tool(category="group")
@@ -285,13 +350,21 @@ class GroupAgentRunner:
             return "\n".join(entries) or "(empty)"
 
         @inherited.tool(category="group")
-        def group_read_workspace(path: str, max_chars: int = 12000) -> str:
-            """Read a text file from this group chat workspace."""
+        def group_read_workspace(path: str, max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS, detail: str = "auto", start_line: int = 1, limit: int | None = None):
+            """Read text/documents or view an image from this group chat workspace.
+
+            Args:
+                path: File path inside this group chat workspace
+                max_chars: Maximum extracted text characters; defaults to 300000
+                detail: Image detail: auto, low, high, or original; ignored for documents
+                start_line: First text line, 1-based
+                limit: Maximum text lines to read
+            """
             target = self._safe_group_workspace_path(group.id, path)
             if not target.exists() or not target.is_file():
                 return f"File not found: {path}"
             try:
-                return target.read_text(encoding="utf-8", errors="replace")[:max(1000, min(max_chars, 50000))]
+                return tool_read_file(str(target), max_chars=max_chars, detail=detail, start_line=start_line, limit=limit)
             except OSError as exc:
                 return f"Read failed: {exc}"
 
@@ -333,7 +406,10 @@ class GroupAgentRunner:
                 path=rel.as_posix(),
                 preview=content[:240],
             )
-            store.save_artifact(artifact, content)
+            written = tool_write_file(str(self.workspace / rel), content)
+            if written.is_error:
+                return str(written)
+            store.save_artifact(artifact)
             run.artifacts.append(artifact.to_dict())
             store.save_run(run)
             self._emit("group_artifact_created", artifact.to_dict())
@@ -405,12 +481,12 @@ class GroupAgentRunner:
             f"{skill.raw_content}"
         )
 
-    def _call_tool(self, registry: ToolRegistry, name: str, arguments: dict[str, Any]) -> str:
+    def _call_tool(self, registry: ToolRegistry, name: str, arguments: dict[str, Any]) -> Content:
         func = registry.get_function(name)
         if func is None:
             return f"Unknown tool: {name}"
         try:
-            return str(func(**arguments))
+            return tool_content(func(**arguments))
         except Exception as exc:
             return f"Tool error ({name}): {type(exc).__name__}: {exc}"
 
@@ -419,6 +495,14 @@ class GroupAgentRunner:
         compact = []
         for message in messages[-10:]:
             role = message.get("role")
+            if role == "tool" and isinstance(message.get("content"), list):
+                # Preserve visual observations between group turns, without
+                # retaining dangling tool results after text-only compaction.
+                compact.append({"role": "user", "content": [
+                    {"type": "text", "text": f"[Earlier tool observation: {message.get('tool_call_id', '')}]"},
+                    *message["content"],
+                ], "context_kind": "observation"})
+                continue
             if role in {"system", "tool"}:
                 continue
             content = message.get("content")
@@ -426,7 +510,8 @@ class GroupAgentRunner:
                 continue
             if role not in {"user", "assistant"}:
                 continue
-            compact.append({"role": role, "content": content or ""})
+            compact.append({"role": role, "content": content or "",
+                            **({"context_kind": message["context_kind"]} if message.get("context_kind") else {})})
         return compact[-8:]
 
     @staticmethod

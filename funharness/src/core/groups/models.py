@@ -151,6 +151,7 @@ class GroupAgentSession:
     profile_id: str = ""
     private_context_summary: str = ""
     messages: list[dict[str, Any]] = field(default_factory=list)
+    context_state: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -166,6 +167,7 @@ class GroupAgentSession:
             profile_id=str(data.get("profile_id") or ""),
             private_context_summary=str(data.get("private_context_summary") or ""),
             messages=list(data.get("messages", [])),
+            context_state=dict(data.get("context_state") or {}),
             created_at=float(data.get("created_at") or time.time()),
             updated_at=float(data.get("updated_at") or time.time()),
         )

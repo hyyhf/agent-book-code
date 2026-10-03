@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import sys
 import threading
 import time
 import unittest
@@ -51,6 +52,26 @@ class GroupCoreTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
+
+    def test_group_command_uses_scratch_directory_and_accepts_timeout(self):
+        runner = GroupAgentRunner(store=self.store, workspace=self.workspace)
+        group = self.store.save_group(AgentGroup(name="commands"))
+        member = GroupMember(group_id=group.id, profile_id="p", display_name="tester")
+        profile = AgentProfile(id="p", name="tester")
+        run = GroupAgentRun(group_id=group.id, member_id=member.id, profile_id=profile.id)
+        registry = runner._tool_registry(group, member, profile, run)
+        command = f'"{sys.executable}" -c "from pathlib import Path; Path(\'local.txt\').write_text(\'ok\')"'
+
+        def run_tools(**kwargs):
+            return registry.get_function("tool_run_command")(command, timeout=3, yield_time_ms=3000)
+
+        with patch.object(runner, "_run", side_effect=run_tools):
+            result = runner.run(group=group, member=member, profile=profile,
+                                session=GroupAgentSession(), run=run, trigger=GroupMessage(),
+                                cancel_event=threading.Event())
+        self.assertIn("status=done", result)
+        self.assertEqual((runner._group_scratch_path(group.id, member.id) / "local.txt").read_text(), "ok")
+        self.assertIn("tool_runtime_wait", registry)
 
     def test_mention_router_supports_single_multiple_and_all(self) -> None:
         members = [
@@ -331,7 +352,7 @@ description: Loaded in group chat.
             {"path": str(self.workspace / "outside.md"), "old_text": "x", "new_text": "y"},
         )
 
-        self.assertIn("Replaced", result)
+        self.assertIn("Replaced", str(result))
         target = self.workspace / ".funharness" / "groups" / group.id / "artifacts" / member.id / "report.md"
         self.assertEqual(target.read_text(encoding="utf-8"), "updated")
         self.assertIn("Path escapes group chat folder", outside)

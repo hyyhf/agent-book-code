@@ -36,7 +36,7 @@ class GroupContextBuilder:
                 f"Private session summary:\n{session.private_context_summary or '(no private summary yet)'}",
                 f"Recent public group messages:\n{public_log or '(no previous messages)'}",
                 f"Group workspace root: {group_workspace.as_posix()}\nGroup scratch namespace: .funharness/groups/{scratch.as_posix()}/scratch/{member.id}",
-                "Workspace rule: group_list_workspace, group_read_workspace, group_search_workspace, and tool_grep_search can only inspect files inside this group chat folder. Use group_write_artifact for deliverables. tool_replace_in_file can only modify files inside this group chat folder. tool_run_command runs from your group scratch namespace.",
+                "Workspace rule: group_list_workspace, group_read_workspace, group_search_workspace, and tool_grep_search can only inspect files inside this group chat folder. Read existing images with group_read_workspace before making visual claims; it detects images and returns visual input, while a path alone does not show pixels. Use group_write_artifact for deliverables. Read existing text with group_read_workspace (start_line/limit) before editing or overwriting; re-read on FILE_CHANGED and do not bypass conflicts with shell writes. Batch disjoint changes in one tool_replace_in_file call. tool_replace_in_file can only modify files inside this group chat folder. tool_run_command runs from your group scratch namespace.",
                 f"Enabled skills summary:\n{self.skills_summary or '(no skills selected)'}",
                 f"User message that mentioned you:\n{trigger.content}",
                 f"Run id: {run.id}",

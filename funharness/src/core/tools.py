@@ -9,13 +9,16 @@ import inspect
 import json
 import os
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from types import UnionType
-from typing import Any, TypedDict, Union, get_args, get_origin, get_type_hints, is_typeddict
+from typing import Any, Literal, NotRequired, TypedDict, Union, get_args, get_origin, get_type_hints, is_typeddict
 
-from .attachments import parse_document
-from .permissions import SandboxExecutor
+from .attachments import DEFAULT_ATTACHMENT_MAX_CHARS, read_document
+from .content import ToolResult
+from .file_editing import EditError, edit_file, normalize_edits, read_text_file, record_missing, _error
+from .media import is_image_file
+from .runtime import current_commands, command_timeout, wait_seconds
+from .command_shells import ShellName
 
 # ----------------------------------------------------------------
 #  ToolRegistry
@@ -27,6 +30,9 @@ _TYPE_MAP = {str: "string", int: "integer", float: "number", bool: "boolean"}
 def _schema_for_type(ptype: Any) -> dict:
     origin = get_origin(ptype)
     args = get_args(ptype)
+
+    if origin is Literal:
+        return {"type": _TYPE_MAP.get(type(args[0]), "string"), "enum": list(args)}
 
     if origin in (Union, UnionType):
         non_none = [arg for arg in args if arg is not type(None)]
@@ -160,34 +166,42 @@ class ToolRegistry:
 registry = ToolRegistry()
 
 
-@dataclass
-class ToolResult:
-    """Tool return value with optional UI-only display metadata."""
-
-    content: str
-    display: dict[str, Any] | None = None
-
-    def __str__(self) -> str:
-        return self.content
-
-
 class ReplacementSpec(TypedDict):
     old_text: str
     new_text: str
+    replace_all: NotRequired[bool]
+    expected_count: NotRequired[int]
 
 
 # --- File Tools ---
 
 @registry.tool(category="file")
-def tool_read_file(path: str) -> str:
-    """Read file content and return it. Returns error message if file not found.
+def tool_read_file(
+    path: str,
+    max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS,
+    detail: str = "auto",
+    start_line: int = 1,
+    limit: int | None = None,
+) -> str | ToolResult:
+    """Read text, documents or actual image pixels. For code, prefer a small line window.
 
     Args:
         path: File path to read (relative or absolute)
+        max_chars: Maximum text characters, defaults to 300000; does not truncate images
+        detail: Image detail: auto, low, high, or original; ignored for text
+        start_line: First text line to read, 1-based; ignored for images/documents
+        limit: Maximum text lines to return; omit to read to the character limit
     """
     try:
-        return parse_document(Path(path))
+        # Structured documents retain extraction; source/CSV text must stay literal
+        # so a displayed excerpt can be used directly as an edit anchor.
+        from .file_editing import _target
+        target, _ = _target(path)
+        if is_image_file(target) or target.suffix.lower() in {".pdf", ".docx", ".xlsx", ".doc", ".xls"}:
+            return read_document(target, max_chars=max_chars, detail=detail)
+        return read_text_file(path, max_chars, start_line, limit)
     except FileNotFoundError:
+        record_missing(path)
         return f"Error: file '{path}' not found"
     except PermissionError:
         return f"Error: permission denied for '{path}'"
@@ -196,158 +210,149 @@ def tool_read_file(path: str) -> str:
 
 
 @registry.tool(category="file")
-def tool_write_file(path: str, content: str) -> str:
-    """Write content to a file. Overwrites if exists, creates parent dirs if needed.
+def tool_write_file(path: str, content: str, expected_revision: str | None = None) -> ToolResult:
+    """Atomically create or overwrite UTF-8 text. Read existing files first; prefer batch edits.
 
     Args:
         path: Target file path
-        content: Full text content to write
+        content: Full text content; use tool_replace_in_file for localized changes
+        expected_revision: Optional revision from a prior read; stale revisions are rejected
     """
-    try:
-        p = Path(path)
-        is_new = not p.exists()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
-        line_count = content.count("\n") + (1 if content else 0)
-        action = "Created" if is_new else "Written to"
-        return f"{action} {path} ({len(content)} chars, {line_count} lines)"
-    except PermissionError:
-        return f"Error: permission denied for '{path}'"
-    except Exception as e:
-        return f"Write failed: {e}"
-
-
-def _text_not_found_message(path: str, old_text: str, content: str, prefix: str = "Error") -> str:
-    needle = old_text.strip().split("\n")[0][:60]
-    hint = ""
-    if needle:
-        for i, line in enumerate(content.splitlines(), 1):
-            if needle[:30] in line:
-                hint = f" (similar text near line {i}: {line.rstrip()[:80]})"
-                break
-    return f"{prefix}: text not found in '{path}'{hint}"
-
-
-def _normalize_replacements(
-    old_text: str,
-    new_text: str,
-    replacements: list[ReplacementSpec] | str | None,
-) -> tuple[list[ReplacementSpec] | None, str | None]:
-    if replacements is None:
-        if old_text == "":
-            return None, "Error: old_text is required when replacements is not provided"
-        return [{"old_text": old_text, "new_text": new_text}], None
-
-    if isinstance(replacements, str):
-        try:
-            replacements = json.loads(replacements)
-        except json.JSONDecodeError as e:
-            return None, f"Error: replacements must be a JSON array ({e})"
-
-    if not isinstance(replacements, list) or not replacements:
-        return None, "Error: replacements must be a non-empty list"
-
-    normalized = []
-    for index, item in enumerate(replacements, 1):
-        if not isinstance(item, dict):
-            return None, f"Error: replacement {index} must be an object"
-        item_old = item.get("old_text", "")
-        item_new = item.get("new_text", "")
-        if not isinstance(item_old, str) or not isinstance(item_new, str):
-            return None, f"Error: replacement {index} old_text and new_text must be strings"
-        if item_old == "":
-            return None, f"Error: replacement {index} old_text cannot be empty"
-        normalized.append({"old_text": item_old, "new_text": item_new})
-    return normalized, None
+    if not isinstance(content, str):
+        return _error(EditError("INVALID_ARGUMENT", "content must be a string"), path)
+    return edit_file(path, [], expected_revision, content=content)
 
 
 @registry.tool(category="file")
 def tool_replace_in_file(
     path: str,
-    old_text: str = "",
-    new_text: str = "",
+    old_text: str | None = None,
+    new_text: str | None = None,
     replacements: list[ReplacementSpec] | None = None,
-) -> str:
-    """Find exact text in a file and replace it. For multiple edits, pass replacements.
+    replace_all: bool = False,
+    expected_count: int | None = None,
+    expected_revision: str | None = None,
+) -> ToolResult:
+    """Edit UTF-8 text in one atomic batch. Read first. Each old_text must be unique.
+
+    Match all entries against the original file; reject overlaps and commit once.
+    Keep anchors short but unique. LF/CRLF differences are handled automatically.
+    No other whitespace or Unicode fuzzing is performed. Re-read on FILE_CHANGED.
 
     Args:
         path: Target file path
-        old_text: Text to find for a single replacement (exact match required)
-        new_text: Replacement text for a single replacement
-        replacements: Optional list of {"old_text": "...", "new_text": "..."} edits to apply in one write
+        old_text: Exact non-empty anchor for a single edit; omit when using replacements
+        new_text: Required for a single edit; explicitly use an empty string to delete
+        replacements: Batch of old_text/new_text objects; optional per-edit replace_all and expected_count
+        replace_all: Single edit only: explicitly replace every occurrence; default false
+        expected_count: Single edit only: require this exact match count; counts above 1 require replace_all
+        expected_revision: Optional read revision; the agent's observed version is also checked automatically
     """
     try:
-        p = Path(path)
-        content = p.read_text(encoding="utf-8")
-        specs, error = _normalize_replacements(old_text, new_text, replacements)
-        if error:
-            return error
-
-        matches: list[tuple[int, int, int]] = []
-        counts = [0 for _ in specs]
-        for spec_index, spec in enumerate(specs):
-            start = 0
-            while True:
-                found = content.find(spec["old_text"], start)
-                if found == -1:
-                    break
-                end = found + len(spec["old_text"])
-                matches.append((found, end, spec_index))
-                counts[spec_index] += 1
-                start = end
-            if counts[spec_index] == 0:
-                prefix = f"Error: replacement {spec_index + 1}"
-                return _text_not_found_message(path, spec["old_text"], content, prefix)
-
-        matches.sort(key=lambda match: (match[0], match[1]))
-        for previous, current in zip(matches, matches[1:]):
-            if previous[1] > current[0]:
-                return (
-                    "Error: replacement texts overlap; use more specific old_text values "
-                    f"near offset {current[0]}"
-                )
-
-        parts = []
-        cursor = 0
-        for start, end, spec_index in matches:
-            parts.append(content[cursor:start])
-            parts.append(specs[spec_index]["new_text"])
-            cursor = end
-        parts.append(content[cursor:])
-        new_content = "".join(parts)
-        p.write_text(new_content, encoding="utf-8")
-        count = sum(counts)
-        note = ""
-        if len(specs) > 1:
-            detail = ", ".join(f"{i + 1}:{n}" for i, n in enumerate(counts))
-            note = f" across {len(specs)} replacement(s) ({detail})"
-        elif count > 1:
-            note = f" (warning: {count} occurrences replaced, consider using more specific text)"
-        return f"Replaced {count} occurrence(s) in {path}{note}"
-    except FileNotFoundError:
-        return f"Error: file '{path}' not found"
-    except Exception as e:
-        return f"Replace failed: {e}"
+        specs = normalize_edits(old_text, new_text, replacements, replace_all, expected_count)
+        return edit_file(path, specs, expected_revision)
+    except EditError as exc:
+        return _error(exc, path)
 
 
 # --- System Tools ---
 
 @registry.tool(category="system")
-def tool_run_command(command: str, timeout: int = 30) -> str:
-    """Execute a short shell command and return output.
+def tool_run_command(command: str, timeout: int = 300, yield_time_ms: int = 1000,
+                     background: bool = False, shell: ShellName = "default") -> str:
+    """Run a managed non-interactive shell command; return output or a running task ID.
 
-    Use tool_runtime_run for long-lived services, preview servers, dev servers,
-    watchers, or other commands that should keep running in the background.
+    Unknown duration is fine: unfinished commands keep running after the short
+    wait. Never rerun a running command; use tool_runtime_wait/output/cancel.
+    For long-lived services use background=true, timeout=0 and keep the server
+    process in the foreground (no start, nohup, background suffix, or detached terminal).
+    Select shell=powershell for Windows PowerShell 5.1 or shell=pwsh for
+    PowerShell 7; send native script text, including multiline code. stdin is closed.
 
     Args:
         command: Shell command string to execute
-        timeout: Maximum seconds to wait before stopping the command
+        timeout: Total lifetime in seconds, default 300; 1..86400, or 0 only with background=true
+        yield_time_ms: Wait up to 0..10000 ms for initial output, independently of timeout
+        background: Explicit background service/job; return immediately and retain until cancelled or backend shutdown
+        shell: default preserves Windows cmd / POSIX sh; cmd, powershell (Windows 5.1), pwsh (7+), sh, or bash. Do not mix shell syntaxes. PowerShell cmdlet errors stop the script; last native exit code is preserved.
     """
-    return SandboxExecutor(
-        work_dir=os.getcwd(),
-        timeout=timeout,
-        max_output=10000,
-    ).execute(command)
+    command_timeout(timeout, background=background)
+    wait_seconds(yield_time_ms, maximum=10000)
+    runtime, interrupted = current_commands()
+    if interrupted and interrupted():
+        return "Interrupted: command not started"
+    runtime_id = runtime.submit_command(command, timeout=timeout, background=background,
+                                        should_interrupt=None if background else interrupted, shell=shell)
+    return runtime.wait(runtime_id, 0 if background else yield_time_ms, should_interrupt=interrupted)
+
+
+@registry.tool(category="system")
+def tool_runtime_run(command: str, description: str = "", timeout: int = 300,
+                     shell: ShellName = "default") -> str:
+    """Start a managed background command and immediately return its runtime ID.
+
+    Args:
+        command: Non-interactive shell command; keep services in foreground, do not detach
+        description: Short description
+        timeout: Lifetime seconds (1..86400); 0 for a service stopped explicitly or on backend shutdown
+        shell: default (Windows cmd / POSIX sh), cmd, powershell (Windows 5.1), pwsh (7+), sh, or bash
+    """
+    runtime, interrupted = current_commands()
+    if interrupted and interrupted():
+        return "Interrupted: command not started"
+    runtime_id = runtime.submit_command(command, description, timeout, background=True, shell=shell)
+    return runtime.wait(runtime_id, 0, should_interrupt=interrupted)
+
+
+@registry.tool(category="system")
+def tool_runtime_status(runtime_id: str = "") -> str:
+    """Show managed commands, elapsed time, process IDs and completion status.
+
+    Args:
+        runtime_id: Optional runtime task ID; omit to list tasks
+    """
+    runtime, _ = current_commands()
+    if not runtime_id:
+        return runtime.summary()
+    task = runtime.get(runtime_id)
+    return json.dumps(task.to_dict(), ensure_ascii=False, indent=2) if task else f"Unknown runtime task: {runtime_id}"
+
+
+@registry.tool(category="system")
+def tool_runtime_output(runtime_id: str) -> str:
+    """Read the current bounded output snapshot, including output from running tasks.
+
+    Args:
+        runtime_id: Runtime task ID
+    """
+    runtime, _ = current_commands()
+    return runtime.wait(runtime_id, 0)
+
+
+@registry.tool(category="system")
+def tool_runtime_wait(runtime_id: str, yield_time_ms: int = 10000) -> str:
+    """Wait for an existing command without restarting it; return status and output.
+
+    Running is not success. Wait before dependent work or reporting completion.
+    Repeated waits never extend the command's total timeout.
+
+    Args:
+        runtime_id: Runtime task ID returned by a command tool
+        yield_time_ms: Wait between 0 and 30000 ms; default 10000
+    """
+    runtime, interrupted = current_commands()
+    return runtime.wait(runtime_id, yield_time_ms, should_interrupt=interrupted)
+
+
+@registry.tool(category="system")
+def tool_runtime_cancel(runtime_id: str) -> str:
+    """Request termination of a command and its descendants; wait to confirm exit.
+
+    Args:
+        runtime_id: Runtime task ID
+    """
+    runtime, _ = current_commands()
+    return runtime.cancel(runtime_id)
 
 
 # --- Search Tools ---

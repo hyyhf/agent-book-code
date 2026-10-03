@@ -22,12 +22,12 @@ class ReplaceInFileToolTests(unittest.TestCase):
             result = tool_replace_in_file(
                 str(target),
                 replacements=[
-                    {"old_text": "alpha", "new_text": "A"},
+                    {"old_text": "alpha", "new_text": "A", "replace_all": True},
                     {"old_text": "beta", "new_text": "B"},
                 ],
             )
 
-            self.assertIn("Replaced 3 occurrence(s)", result)
+            self.assertIn("Replaced 3 occurrence(s)", str(result))
             self.assertEqual(target.read_text(encoding="utf-8"), "A\nB\nA\n")
 
     def test_replacements_are_checked_before_writing(self) -> None:
@@ -44,7 +44,8 @@ class ReplaceInFileToolTests(unittest.TestCase):
                 ],
             )
 
-            self.assertIn("Error: replacement 2", result)
+            self.assertIn("replacement 2", str(result))
+            self.assertTrue(result.is_error)
             self.assertEqual(target.read_text(encoding="utf-8"), original)
 
     def test_replacements_do_not_cascade_into_new_text(self) -> None:
@@ -67,9 +68,9 @@ class ReplaceInFileToolTests(unittest.TestCase):
             target = Path(tmp) / "sample.txt"
             target.write_text("x x", encoding="utf-8")
 
-            result = tool_replace_in_file(str(target), "x", "y")
+            result = tool_replace_in_file(str(target), "x", "y", replace_all=True)
 
-            self.assertIn("Replaced 2 occurrence(s)", result)
+            self.assertIn("Replaced 2 occurrence(s)", str(result))
             self.assertEqual(target.read_text(encoding="utf-8"), "y y")
 
     def test_schema_describes_batch_replacements(self) -> None:
@@ -99,7 +100,7 @@ class ReplaceInFileToolTests(unittest.TestCase):
 
         self.assertEqual(params["required"], ["command"])
         self.assertEqual(params["properties"]["timeout"]["type"], "integer")
-        self.assertEqual(params["properties"]["timeout"]["default"], 30)
+        self.assertEqual(params["properties"]["timeout"]["default"], 300)
         self.assertIn("long-lived services", schema["function"]["description"])
 
 

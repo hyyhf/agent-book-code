@@ -236,7 +236,8 @@ class FailurePattern:
         error_tools = {}
         for h in tool_calls_history:
             result = h.get("result", "")
-            if any(kw in result for kw in ["Error", "Failed", "DENIED"]):
+            if (h["is_error"] if h.get("is_error") is not None else
+                    any(kw in result for kw in ["Error", "Failed", "DENIED"])):
                 tool = h["tool"]
                 error_tools[tool] = error_tools.get(tool, 0) + 1
         for tool, count in error_tools.items():
@@ -245,7 +246,7 @@ class FailurePattern:
                                  "tool": tool, "count": count,
                                  "suggestion": f"Tool '{tool}' failed {count} times. Review usage."})
         # Check permission denials
-        denials = [h for h in tool_calls_history if "DENIED" in h.get("result", "")]
+        denials = [h for h in tool_calls_history if h.get("is_error") is not False and "DENIED" in h.get("result", "")]
         if len(denials) >= 2:
             findings.append({"type": FailureType.PERMISSION_DENIED,
                              "count": len(denials),

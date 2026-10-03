@@ -1,0 +1,160 @@
+{
+  "rounds": 25,
+  "results": [
+    {
+      "scenario": "batch",
+      "file_bytes": 85000,
+      "edits": 2,
+      "before": {
+        "median_ms": 72.214,
+        "min_ms": 55.954,
+        "payload_bytes": 0
+      },
+      "after": {
+        "median_ms": 79.433,
+        "min_ms": 39.611,
+        "payload_bytes": 0
+      },
+      "speedup": 0.91
+    },
+    {
+      "scenario": "gui_single_edit",
+      "file_bytes": 85000,
+      "edits": 1,
+      "before": {
+        "median_ms": 68.267,
+        "min_ms": 35.521,
+        "payload_bytes": 170122
+      },
+      "after": {
+        "median_ms": 68.996,
+        "min_ms": 40.513,
+        "payload_bytes": 653
+      },
+      "speedup": 0.99
+    },
+    {
+      "scenario": "noop",
+      "file_bytes": 85000,
+      "edits": 1,
+      "before": {
+        "median_ms": 59.805,
+        "min_ms": 32.878,
+        "payload_bytes": 0
+      },
+      "after": {
+        "median_ms": 0.948,
+        "min_ms": 0.34,
+        "payload_bytes": 0
+      },
+      "speedup": 63.09
+    },
+    {
+      "scenario": "batch",
+      "file_bytes": 1020000,
+      "edits": 12,
+      "before": {
+        "median_ms": 32.031,
+        "min_ms": 16.645,
+        "payload_bytes": 0
+      },
+      "after": {
+        "median_ms": 31.511,
+        "min_ms": 21.03,
+        "payload_bytes": 0
+      },
+      "speedup": 1.02
+    },
+    {
+      "scenario": "gui_single_edit",
+      "file_bytes": 1020000,
+      "edits": 1,
+      "before": {
+        "median_ms": 56.906,
+        "min_ms": 28.554,
+        "payload_bytes": 2040122
+      },
+      "after": {
+        "median_ms": 22.082,
+        "min_ms": 15.993,
+        "payload_bytes": 653
+      },
+      "speedup": 2.58
+    },
+    {
+      "scenario": "noop",
+      "file_bytes": 1020000,
+      "edits": 1,
+      "before": {
+        "median_ms": 15.886,
+        "min_ms": 12.289,
+        "payload_bytes": 0
+      },
+      "after": {
+        "median_ms": 0.797,
+        "min_ms": 0.406,
+        "payload_bytes": 0
+      },
+      "speedup": 19.93
+    },
+    {
+      "scenario": "batch",
+      "file_bytes": 5100000,
+      "edits": 12,
+      "before": {
+        "median_ms": 104.692,
+        "min_ms": 68.355,
+        "payload_bytes": 0
+      },
+      "after": {
+        "median_ms": 80.309,
+        "min_ms": 59.208,
+        "payload_bytes": 0
+      },
+      "speedup": 1.3
+    },
+    {
+      "scenario": "gui_single_edit",
+      "file_bytes": 5100000,
+      "edits": 1,
+      "before": {
+        "median_ms": 248.895,
+        "min_ms": 190.182,
+        "payload_bytes": 10200122
+      },
+      "after": {
+        "median_ms": 36.787,
+        "min_ms": 26.284,
+        "payload_bytes": 653
+      },
+      "speedup": 6.77
+    },
+    {
+      "scenario": "noop",
+      "file_bytes": 5100000,
+      "edits": 1,
+      "before": {
+        "median_ms": 48.772,
+        "min_ms": 35.483,
+        "payload_bytes": 0
+      },
+      "after": {
+        "median_ms": 2.121,
+        "min_ms": 1.711,
+        "payload_bytes": 0
+      },
+      "speedup": 22.99
+    }
+  ],
+  "date": "2026-09-29",
+  "python": "3.12.11",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "baseline_source_sha256": "40b68c52ef16a6f1518a7d6aba002f7827a996680e0bf8466597bdf5ec678218",
+  "methodology": "4 warmup pairs, 25 measured pairs; alternate before/after order; medians; local temporary CRLF fixtures; no LLM/network; successful GUI diff path",
+  "note": "A subsequent explicit is_error field adds about 19 bytes to each result; timings exclude that negligible metadata-only change.",
+  "read_window": {
+    "before_output_characters": 300036,
+    "after_output_characters": 8523,
+    "requested_lines": 100
+  }
+}

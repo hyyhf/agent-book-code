@@ -8,11 +8,15 @@ import platform
 import re
 import shlex
 import subprocess
+import sys
+import tempfile
 import threading
 import time
 import ctypes
 from enum import Enum
 from pathlib import Path
+
+from .command_shells import CommandShell, powershell_argv, resolve_shell
 
 
 class PermissionMode(Enum):
@@ -23,12 +27,12 @@ class PermissionMode(Enum):
 
 RISK_LEVELS = {
     "read": [
-        "tool_read_file", "tool_list_directory", "tool_grep_search",
+        "tool_read_file", "tool_find_files", "tool_list_directory", "tool_grep_search",
         "tool_read_memory", "tool_search_memory", "tool_list_skills",
         "tool_load_skill", "tool_view_tasks", "tool_next_task",
         "tool_read_progress", "tool_background_status", "tool_web_fetch",
         "tool_task_get", "tool_task_list", "tool_runtime_status",
-        "tool_runtime_output", "tool_schedule_list", "tool_team_list",
+        "tool_runtime_output", "tool_runtime_wait", "tool_schedule_list", "tool_team_list",
         "tool_team_inbox", "tool_list_attachments", "tool_read_attachment",
     ],
     "write": [
@@ -102,7 +106,12 @@ class CommandPolicy:
     def check(self, command: str) -> tuple[str, str]:
         cmd_lower = command.lower().strip()
         for pattern in self.blacklist:
-            if pattern.lower() in cmd_lower:
+            matches = pattern.lower() in cmd_lower
+            if pattern.lower() == "format":
+                # Disk formatting remains blocked; PowerShell's Format-Table,
+                # Format-List, etc. are ordinary output formatting commands.
+                matches = bool(re.search(r'(?<![\w.-])format(?:\.exe)?(?![\w.-])', cmd_lower))
+            if matches:
                 return "deny", f"Command contains dangerous pattern '{pattern}'"
         for prefix in self.whitelist:
             if cmd_lower.startswith(prefix.lower()):
@@ -119,11 +128,12 @@ class PermissionManager:
     def check_tool_call(self, tool_name: str, arguments: dict) -> tuple[str, str]:
         file_tools = {
             "tool_read_file": "path", "tool_write_file": "path",
+            "tool_find_files": "path",
             "tool_replace_in_file": "path", "tool_list_directory": "path",
             "tool_grep_search": "path",
         }
         if tool_name in file_tools:
-            filepath = arguments.get(file_tools[tool_name], "")
+            filepath = arguments.get(file_tools[tool_name]) or "."
             if filepath:
                 allowed, reason = self.path_policy.check(filepath)
                 if not allowed:
@@ -173,44 +183,29 @@ def detect_danger(tool_name: str, arguments: dict) -> tuple[bool, str]:
 # ---- Sandbox Executor ----
 
 class _BoundedBytes:
+    """Bound memory while retaining both startup diagnostics and recent output."""
     def __init__(self, limit: int):
-        self.limit = max(0, limit)
+        self.limit = max(2, limit)
         self.total = 0
-        self._chunks: list[bytes] = []
-        self._stored = 0
-        self._lock = threading.Lock()
+        self.head = bytearray()
+        self.tail = bytearray()
 
     def append(self, chunk: bytes) -> None:
-        if not chunk:
-            return
-        with self._lock:
-            self.total += len(chunk)
-            remaining = self.limit - self._stored
-            if remaining <= 0:
-                return
-            kept = chunk[:remaining]
-            self._chunks.append(kept)
-            self._stored += len(kept)
+        self.total += len(chunk)
+        head_size = self.limit // 2
+        take = min(len(chunk), head_size - len(self.head))
+        self.head.extend(chunk[:take])
+        self.tail.extend(chunk[take:])
+        del self.tail[:max(0, len(self.tail) - (self.limit - head_size))]
 
     def data(self) -> bytes:
-        with self._lock:
-            return b"".join(self._chunks)
+        marker = b"\n...(truncated middle of output)...\n" if self.truncated else b""
+        return bytes(self.head) + marker + bytes(self.tail)
 
     @property
     def truncated(self) -> bool:
-        with self._lock:
-            return self.total > self._stored
+        return self.total > self.limit
 
-
-def _read_stream_bounded(stream, sink: _BoundedBytes) -> None:
-    try:
-        while True:
-            chunk = stream.read(4096)
-            if not chunk:
-                break
-            sink.append(chunk)
-    except Exception:
-        pass
 
 class SandboxExecutor:
     FILTERED_ENV_VARS = [
@@ -218,276 +213,181 @@ class SandboxExecutor:
         "OPENAI_API_KEY", "DATABASE_URL", "SECRET_KEY",
     ]
 
-    def __init__(self, work_dir=None, timeout=30, max_output=10000):
+    def __init__(self, work_dir=None, timeout=30, max_output=10000, shell="default"):
         self.work_dir = work_dir or os.getcwd()
         self.timeout = timeout
         self.max_output = max_output
+        self.shell = shell
+        self._resolved_shell = None
+        self._script_path = None
         self._process: subprocess.Popen | None = None
         self._process_lock = threading.Lock()
         self._interrupted = threading.Event()
+        self.outcome = "queued"
+        self.exit_code = None
+        self.pid = None
+        self.output_bytes = 0
+        self.last_output_at = 0.0
 
     def _build_safe_env(self) -> dict:
         env = os.environ.copy()
         for var in self.FILTERED_ENV_VARS:
             env.pop(var, None)
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        env.setdefault("GIT_TERMINAL_PROMPT", "0")
         return env
 
     def _build_popen_args(self, command: str) -> tuple[str | list[str], dict, Path]:
-        work_dir = Path(self.work_dir)
-        effective_cwd = work_dir
+        effective_cwd = Path(self.work_dir)
+        shell = self.shell if isinstance(self.shell, CommandShell) else resolve_shell(self.shell)
+        self._resolved_shell = shell
         command_to_run = command
-
-        if platform.system() == "Windows":
-            effective_cwd, command_to_run = _extract_windows_leading_cd(command, work_dir)
-            python_argv = _windows_python_c_argv(command_to_run)
-            if python_argv:
-                return python_argv, {
-                    "shell": False,
-                    "stdout": subprocess.PIPE,
-                    "stderr": subprocess.PIPE,
-                    "cwd": str(effective_cwd),
-                    "env": self._build_safe_env(),
-                }, effective_cwd
-
-        popen_kwargs = {
-            "shell": True,
+        if shell.is_powershell:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8-sig", suffix=".ps1",
+                                             prefix="funharness-command-", delete=False) as script:
+                self._script_path = Path(script.name)
+                script.write(command)
+            command_to_run = powershell_argv(shell, self._script_path)
+        elif shell.name == "cmd":
+            effective_cwd, command_to_run = _extract_windows_leading_cd(command, effective_cwd)
+            command_to_run = (_windows_mkdir_argv(command_to_run)
+                              or _windows_python_c_argv(command_to_run) or command_to_run)
+        else:
+            command_to_run = [shell.executable, "-c", command]
+        return command_to_run, {
+            "shell": isinstance(command_to_run, str),
+            **({"executable": shell.executable} if isinstance(command_to_run, str) else {}),
+            "stdin": subprocess.DEVNULL,
             "stdout": subprocess.PIPE,
             "stderr": subprocess.PIPE,
+            "bufsize": 0,
             "cwd": str(effective_cwd),
             "env": self._build_safe_env(),
-        }
-        if platform.system() == "Windows":
-            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            popen_kwargs["start_new_session"] = True
-        return command_to_run, popen_kwargs, effective_cwd
+        }, effective_cwd
 
     def interrupt(self) -> None:
-        """Request immediate termination of the active subprocess tree."""
+        # Only signal here: the execution thread owns all process handles. This
+        # makes GUI cancellation immediate and avoids concurrent close/kill races.
         self._interrupted.set()
-        with self._process_lock:
-            proc = self._process
-        if proc is not None and proc.poll() is None:
-            self._kill_tree(proc)
 
-    def execute(self, command: str, should_interrupt=None) -> str:
+    def execute(self, command: str, should_interrupt=None, on_progress=None) -> str:
+        from .process_tree import ProcessTree
+        import math
+
+        tree = None
+        proc = None
+        stdout = _BoundedBytes(max(4096, self.max_output * 4))
+        stderr = _BoundedBytes(max(4096, self.max_output * 4))
+        started = time.monotonic()
+        self.outcome = "running"
+
+        def cancelled():
+            return self._interrupted.is_set() or bool(should_interrupt and should_interrupt())
+
+        def text_output():
+            budget = self.max_output // 2 if stdout.total and stderr.total else self.max_output
+            output = _limit_command_text(decode_process_output(stdout.data()), budget)
+            if stderr.total:
+                output += "\n[stderr]\n" + _limit_command_text(decode_process_output(stderr.data()), budget)
+            return output
+
+        def drain():
+            # Both streams are nonblocking. Limit work per tick so flooding one
+            # stream cannot starve stderr, deadline checks, or cancellation.
+            for stream, sink in ((proc.stdout, stdout), (proc.stderr, stderr)):
+                for _ in range(16):
+                    try:
+                        chunk = os.read(stream.fileno(), 65536)
+                    except BlockingIOError:
+                        break
+                    except OSError as exc:
+                        if getattr(exc, "winerror", None) in (109, 232):
+                            break  # broken/empty Windows pipe
+                        raise
+                    if not chunk:
+                        break
+                    sink.append(chunk)
+                    self.last_output_at = time.time()
+            self.output_bytes = stdout.total + stderr.total
+
         try:
-            self._interrupted.clear()
-            if platform.system() == "Windows":
-                mkdir_result = _execute_windows_mkdir(command, Path(self.work_dir))
-                if mkdir_result is not None:
-                    return mkdir_result
-
+            if not isinstance(command, str) or not command.strip():
+                raise ValueError("command must be a non-empty string")
+            if self.timeout is not None and (not math.isfinite(self.timeout) or self.timeout <= 0):
+                raise ValueError("timeout must be positive or None for an explicitly managed service")
+            if cancelled():
+                self.outcome = "cancelled"
+                return "Interrupted: command stopped by user"
             popen_command, popen_kwargs, effective_cwd = self._build_popen_args(command)
-            proc = subprocess.Popen(popen_command, **popen_kwargs)
+            tree = ProcessTree()
+            proc = tree.start(popen_command, popen_kwargs)
+            self.pid = proc.pid
             with self._process_lock:
                 self._process = proc
-            capture_limit = max(self.max_output * 4, 4096)
-            stdout_capture = _BoundedBytes(capture_limit)
-            stderr_capture = _BoundedBytes(capture_limit)
-            readers = [
-                threading.Thread(
-                    target=_read_stream_bounded,
-                    args=(proc.stdout, stdout_capture),
-                    daemon=True,
-                ),
-                threading.Thread(
-                    target=_read_stream_bounded,
-                    args=(proc.stderr, stderr_capture),
-                    daemon=True,
-                ),
-            ]
-            for reader in readers:
-                reader.start()
-            deadline = None if self.timeout is None else time.monotonic() + self.timeout
-            try:
-                while True:
-                    if self._interrupted.is_set() or (should_interrupt and should_interrupt()):
-                        self._interrupted.set()
-                        self._kill_tree(proc)
-                        self._wait_after_kill(proc)
-                        self._close_streams(proc, readers, close_pipes=True)
-                        return "Interrupted: command stopped by user"
-                    if deadline is not None and time.monotonic() >= deadline:
-                        raise subprocess.TimeoutExpired(command, self.timeout)
-                    if proc.poll() is not None:
-                        break
-                    time.sleep(0.2)
-            except subprocess.TimeoutExpired:
-                self._kill_tree(proc)
-                self._wait_after_kill(proc)
-                self._close_streams(proc, readers, close_pipes=True)
-                return f"Error: command timed out ({self.timeout}s)"
-
-            if self._interrupted.is_set():
-                self._close_streams(proc, readers, close_pipes=True)
-                return "Interrupted: command stopped by user"
-
-            self._close_streams(proc, readers)
-
-            stdout = decode_process_output(stdout_capture.data())
-            stderr = decode_process_output(stderr_capture.data())
-            if stdout_capture.truncated:
-                stdout += (
-                    f"\n...(stdout capture truncated, captured first "
-                    f"{len(stdout_capture.data())} of at least {stdout_capture.total} bytes)"
-                )
-            if stderr_capture.truncated:
-                stderr += (
-                    f"\n...(stderr capture truncated, captured first "
-                    f"{len(stderr_capture.data())} of at least {stderr_capture.total} bytes)"
-                )
-            output = format_command_output(
-                command, effective_cwd, stdout, stderr, self.max_output
-            )
-            return f"[exit={proc.returncode}]\n{output}"
-        except Exception as e:
-            return f"Execution failed: {e}"
-        finally:
-            with self._process_lock:
-                self._process = None
-
-    @staticmethod
-    def _kill_tree(proc: subprocess.Popen):
-        """Kill the entire process tree (not just the shell parent)."""
-        try:
-            if platform.system() == "Windows":
-                descendant_pids = _windows_descendant_pids(proc.pid)
-                system_root = os.environ.get("SystemRoot", r"C:\Windows")
-                taskkill = str(Path(system_root) / "System32" / "taskkill.exe")
-                if not Path(taskkill).exists():
-                    taskkill = "taskkill"
-                # taskkill /T kills the whole tree, /F forces termination
-                subprocess.run(
-                    [taskkill, "/T", "/F", "/PID", str(proc.pid)],
-                    capture_output=True, timeout=5,
-                )
-                for pid in reversed(descendant_pids):
-                    _windows_terminate_pid(pid)
-                _windows_terminate_pid(proc.pid)
-                _wait_for_windows_pids_exit([*descendant_pids, proc.pid], timeout=2.0)
-                if proc.poll() is None:
-                    proc.kill()
-            else:
-                import signal
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-
-    @staticmethod
-    def _wait_after_kill(proc: subprocess.Popen):
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-            try:
-                proc.wait(timeout=2)
-            except Exception:
-                pass
-
-    @staticmethod
-    def _close_streams(proc: subprocess.Popen, readers: list[threading.Thread], close_pipes: bool = False):
-        if close_pipes:
             for stream in (proc.stdout, proc.stderr):
-                try:
-                    if stream:
-                        stream.close()
-                except Exception:
-                    pass
-        for reader in readers:
-            reader.join(timeout=0.5 if close_pipes else 2)
-        for stream in (proc.stdout, proc.stderr):
+                os.set_blocking(stream.fileno(), False)
+            next_progress = 0.0
+            while True:
+                drain()
+                now = time.monotonic()
+                if cancelled():
+                    self.outcome = "cancelled"
+                    break
+                if proc.poll() is not None:
+                    self.exit_code = proc.returncode
+                    self.outcome = "done" if proc.returncode == 0 else "failed"
+                    break
+                if self.timeout is not None and now - started >= self.timeout:
+                    self.outcome = "timed_out"
+                    break
+                if on_progress and now >= next_progress:
+                    on_progress(text_output(), self)
+                    next_progress = now + 0.5
+                self._interrupted.wait(0.05)
+
+            # A shell exiting does not transfer ownership of descendants. They
+            # are cleaned up here; services must keep their top-level process alive.
+            tree.close()
+            tree = None
+            drain()
+            self.exit_code = proc.returncode
+            output = text_output()
+            if self.outcome == "cancelled":
+                return "Interrupted: command stopped by user" + ("\n" + output if output else "")
+            if self.outcome == "timed_out":
+                return f"Error: command timed out ({self.timeout:g}s)" + ("\n" + output if output else "")
+            if not output and not self._resolved_shell.is_powershell:
+                output = format_command_output(command, effective_cwd, "", "", self.max_output)
+            output = output or "(no output)"
+            return f"[exit={self.exit_code}]\n{output}"
+        except Exception as exc:
+            self.outcome = "failed"
+            return f"Execution failed: {exc}\n{text_output()}".rstrip()
+        finally:
             try:
-                if stream:
-                    stream.close()
-            except Exception:
-                pass
+                if tree:
+                    tree.close()
+            finally:
+                try:
+                    if proc:
+                        # Unbuffered pipes owned by this thread: close never
+                        # waits for a blocked reader or a descendant's EOF.
+                        for stream in (proc.stdout, proc.stderr):
+                            if stream:
+                                stream.close()
+                finally:
+                    with self._process_lock:
+                        self._process = None
+                    if self._script_path:
+                        self._script_path.unlink(missing_ok=True)
+                        self._script_path = None
 
 
-def _windows_descendant_pids(root_pid: int) -> list[int]:
-    if platform.system() != "Windows":
-        return []
-    try:
-        parent_map = _windows_parent_pid_map()
-    except Exception:
-        return []
-    descendants: list[int] = []
-    stack = [root_pid]
-    while stack:
-        parent = stack.pop()
-        children = parent_map.get(parent, [])
-        descendants.extend(children)
-        stack.extend(children)
-    return descendants
-
-
-def _windows_parent_pid_map() -> dict[int, list[int]]:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    TH32CS_SNAPPROCESS = 0x00000002
-    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
-    kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
-    kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
-    kernel32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    kernel32.Process32FirstW.restype = ctypes.c_int
-    kernel32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    kernel32.Process32NextW.restype = ctypes.c_int
-    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-    kernel32.CloseHandle.restype = ctypes.c_int
-
-    class PROCESSENTRY32W(ctypes.Structure):
-        _fields_ = [
-            ("dwSize", ctypes.c_uint32),
-            ("cntUsage", ctypes.c_uint32),
-            ("th32ProcessID", ctypes.c_uint32),
-            ("th32DefaultHeapID", ctypes.c_size_t),
-            ("th32ModuleID", ctypes.c_uint32),
-            ("cntThreads", ctypes.c_uint32),
-            ("th32ParentProcessID", ctypes.c_uint32),
-            ("pcPriClassBase", ctypes.c_long),
-            ("dwFlags", ctypes.c_uint32),
-            ("szExeFile", ctypes.c_wchar * 260),
-        ]
-
-    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-    if snapshot == INVALID_HANDLE_VALUE:
-        return {}
-    try:
-        entry = PROCESSENTRY32W()
-        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
-        parent_map: dict[int, list[int]] = {}
-        ok = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
-        while ok:
-            parent_map.setdefault(int(entry.th32ParentProcessID), []).append(int(entry.th32ProcessID))
-            ok = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
-        return parent_map
-    finally:
-        kernel32.CloseHandle(snapshot)
-
-
-def _windows_terminate_pid(pid: int) -> None:
-    if platform.system() != "Windows" or pid <= 0 or pid == os.getpid():
-        return
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    PROCESS_TERMINATE = 0x0001
-    kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
-    kernel32.OpenProcess.restype = ctypes.c_void_p
-    kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-    kernel32.TerminateProcess.restype = ctypes.c_int
-    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-    kernel32.CloseHandle.restype = ctypes.c_int
-    handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, int(pid))
-    if not handle:
-        return
-    try:
-        kernel32.TerminateProcess(handle, 1)
-    finally:
-        kernel32.CloseHandle(handle)
+def _limit_command_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    half = max(1, limit // 2)
+    return text[:half] + f"\n...(truncated, total {len(text)} chars)...\n" + text[-half:]
 
 
 def _windows_pid_exists(pid: int) -> bool:
@@ -514,52 +414,25 @@ def _windows_pid_exists(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def _wait_for_windows_pids_exit(pids: list[int], timeout: float) -> None:
-    if platform.system() != "Windows":
-        return
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if not any(_windows_pid_exists(pid) for pid in pids):
-            return
-        time.sleep(0.05)
-
-
-def _execute_windows_mkdir(command: str, work_dir: Path) -> str | None:
-    effective_cwd, command_to_run = _extract_windows_leading_cd(command, work_dir)
-    if _has_unquoted_shell_operator(command_to_run):
+def _windows_mkdir_argv(command: str) -> list[str] | None:
+    # Preserve mkdir -p/-Force compatibility, but do the filesystem work inside
+    # the owned subprocess so cancellation and timeout apply to it as well.
+    if _has_unquoted_shell_operator(command):
         return None
-
     try:
-        argv = shlex.split(command_to_run, posix=False)
+        argv = shlex.split(command, posix=False)
     except ValueError:
         return None
-    if not argv:
+    if not argv or Path(argv[0].strip('"')).name.lower() not in {"mkdir", "md"}:
         return None
-
-    executable = Path(argv[0].strip('"')).name.lower()
-    if executable not in {"mkdir", "md"}:
-        return None
-
-    targets: list[Path] = []
-    ignored_flags = {"-p", "--parents", "-force"}
-    for token in argv[1:]:
-        token = token.strip('"').strip("'")
-        if token.lower() in ignored_flags:
-            continue
-        path = Path(token)
-        if not path.is_absolute():
-            path = effective_cwd / path
-        targets.append(path)
-
+    targets = [token.strip('"').strip("'") for token in argv[1:]
+               if token.lower() not in {"-p", "--parents", "-force"}]
     if not targets:
         return None
-
-    created = []
-    for path in targets:
-        path.mkdir(parents=True, exist_ok=True)
-        created.append(str(path))
-
-    return "[exit=0]\n" + "\n".join(f"Created directory {path}" for path in created)
+    script = ("import sys\nfrom pathlib import Path\n"
+              "for target in sys.argv[1:]:\n"
+              " p=Path(target); p.mkdir(parents=True, exist_ok=True); print('Created directory',p.resolve())\n")
+    return [sys.executable, "-c", script, *targets]
 
 
 def _extract_windows_leading_cd(command: str, work_dir: Path) -> tuple[Path, str]:
@@ -677,7 +550,8 @@ def _redirected_output_previews(command: str, work_dir: str | Path,
             continue
         try:
             size = path.stat().st_size
-            text = path.read_text(encoding="utf-8", errors="replace")
+            with path.open("rb") as stream:
+                text = decode_process_output(stream.read(max_output * 4))
         except OSError:
             continue
         if not text:

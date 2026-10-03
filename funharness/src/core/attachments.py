@@ -16,9 +16,12 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+from .content import ToolResult, content_text
+from .media import is_image_file, read_image
+
 
 ATTACHMENT_PREVIEW_CHARS = 1000
-DEFAULT_ATTACHMENT_MAX_CHARS = 120_000
+DEFAULT_ATTACHMENT_MAX_CHARS = 300_000
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".py", ".js", ".ts", ".tsx", ".jsx",
     ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".csv", ".tsv",
@@ -40,6 +43,7 @@ class AttachmentRecord:
     added_at: str
     parse_status: str
     preview: str
+    sent_at: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "AttachmentRecord":
@@ -53,6 +57,7 @@ class AttachmentRecord:
             added_at=data.get("added_at", ""),
             parse_status=data.get("parse_status", ""),
             preview=data.get("preview", ""),
+            sent_at=data.get("sent_at"),
         )
 
 
@@ -91,6 +96,19 @@ def parse_document(path: str | Path, max_chars: int = DEFAULT_ATTACHMENT_MAX_CHA
         )
 
     return _truncate(text, max_chars)
+
+
+def read_document(
+    path: str | Path,
+    max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS,
+    detail: str = "auto",
+) -> str | ToolResult:
+    """Model-facing read; text previews still use parse_document separately."""
+    if not isinstance(max_chars, int) or isinstance(max_chars, bool) or max_chars < 1:
+        raise ValueError("max_chars must be a positive integer")
+    if is_image_file(path):
+        return read_image(path, detail=detail)
+    return parse_document(path, max_chars=max_chars)
 
 
 def _parse_text(path: Path) -> str:
@@ -191,7 +209,8 @@ def _parse_delimited(path: Path, delimiter: str) -> str:
 
 def _looks_like_text(path: Path) -> bool:
     try:
-        chunk = path.read_bytes()[:4096]
+        with path.open("rb") as handle:
+            chunk = handle.read(4096)
     except OSError:
         return False
     if b"\x00" in chunk:
@@ -241,9 +260,15 @@ class AttachmentManager:
         shutil.copy2(source, stored_path)
 
         mime_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
-        preview_text = parse_document(stored_path, max_chars=ATTACHMENT_PREVIEW_CHARS)
+        try:
+            parsed = read_document(stored_path, max_chars=ATTACHMENT_PREVIEW_CHARS)
+            preview_text = content_text(parsed.content) if isinstance(parsed, ToolResult) else parsed
+            if isinstance(parsed, ToolResult):
+                mime_type = parsed.content[1]["mime_type"]
+        except Exception as exc:
+            preview_text = f"Attachment parse failed: {exc}"
         parse_status = "ok"
-        if preview_text.startswith(("Unsupported", "PDF parse failed", "DOCX parse failed", "XLSX parse failed")):
+        if preview_text.startswith(("Unsupported", "PDF parse failed", "DOCX parse failed", "XLSX parse failed", "Attachment parse failed")):
             parse_status = "unsupported" if preview_text.startswith("Unsupported") else "error"
 
         record = AttachmentRecord(
@@ -300,11 +325,23 @@ class AttachmentManager:
                     lines.append(f"    {preview_line}")
         return "\n".join(lines)
 
-    def read(self, attachment_id: str, max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS) -> str:
+    def read(
+        self,
+        attachment_id: str,
+        max_chars: int = DEFAULT_ATTACHMENT_MAX_CHARS,
+        detail: str = "auto",
+    ) -> str | ToolResult:
         record = self.get(attachment_id)
         if record is None:
             return f"Attachment not found: {attachment_id}"
-        return parse_document(record.stored_path, max_chars=max_chars)
+        # Only paths owned by this session may be read via an attachment ID.
+        target = Path(record.stored_path).resolve()
+        if not target.is_relative_to(self.session_dir.resolve()):
+            return "Error: attachment path is outside this session's upload directory"
+        try:
+            return read_document(target, max_chars=max_chars, detail=detail)
+        except Exception as exc:
+            return f"Attachment read failed: {exc}"
 
     @staticmethod
     def _new_id(path: Path) -> str:
