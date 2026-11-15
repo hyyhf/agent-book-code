@@ -12,7 +12,7 @@
 
 <br/>
 
-> **News：** FunHarness Studio v1.0.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v1.0.0)（暂支持 Windows 系统）
+> **News：** FunHarness Studio v1.1.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v1.1.0)（暂支持 Windows 系统）
 
 </div>
 
@@ -44,7 +44,7 @@ Studio 与 FunHarness TUI 共享同一套 Agent Core：从对话与工作区文�
 
 <!-- STUDIO_VIDEO_START -->
 
-https://github.com/user-attachments/assets/8cf803d2-51ad-4072-ae1e-4604cee7055e
+https://github.com/user-attachments/assets/171248ff-0fe8-495e-9411-c34e5a293d27
 
 <!-- STUDIO_VIDEO_END -->
 
