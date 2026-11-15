@@ -48,7 +48,9 @@ from .core.observability import (
     FailurePattern, FailureType,
 )
 
-MAX_ITERATIONS = 100
+from .core.loop_limits import DEFAULT_MAX_ITERATIONS, iteration_limit
+
+MAX_ITERATIONS = DEFAULT_MAX_ITERATIONS
 STREAM_READ_MAX_ATTEMPTS = 3
 _RETRYABLE_STREAM_ERROR_NAMES = {
     "apiconnectionerror",
@@ -1577,13 +1579,14 @@ class FunHarnessAgent:
         loop_span = self.tracer.start_span(SpanKind.AGENT_LOOP, "agent_loop",
                                            metadata={"input": content_text(user_input)[:100]})
 
-        for iteration in range(1, MAX_ITERATIONS + 1):
+        max_iterations = iteration_limit(default=MAX_ITERATIONS)
+        for iteration in range(1, max_iterations + 1):
             self._raise_if_interrupted()
             self._drain_external_events(inject=True)
             self.messages = truncate_tool_results(self.messages)
             # Middleware chain
             mw_context = {
-                "messages": self.messages, "iteration": iteration,
+                "messages": self.messages, "iteration": iteration, "max_iterations": max_iterations,
                 "tool_calls_history": self.tool_calls_history[turn_history_start:],
                 "should_stop": False, "injections": [],
             }
@@ -1715,7 +1718,7 @@ class FunHarnessAgent:
 
         else:
             self.last_run_stop_reason = "max_iterations"
-            self._emit_status("Max iterations reached.")
+            self._emit_status(f"Max iterations reached ({max_iterations}). Send another message to continue.")
 
         self.tracer.finish_span(loop_span)
 

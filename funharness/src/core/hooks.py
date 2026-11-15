@@ -254,15 +254,21 @@ class SelfVerificationMiddleware(Middleware):
 
 
 class EnvironmentAwareMiddleware(Middleware):
-    def __init__(self, max_iterations_warning=20):
+    def __init__(self, max_iterations_warning=None):
         self.max_iterations_warning = max_iterations_warning
         self._last_cwd = None
 
     def process(self, context):
         injections = context.setdefault("injections", [])
         iteration = context.get("iteration", 0)
-        if iteration == self.max_iterations_warning:
-            injections.append(f"[ENV] Used {iteration} iterations. Consider wrapping up.")
+        budget = context.get("max_iterations", 0)
+        warning_at = self.max_iterations_warning
+        if warning_at is None and budget > 1:
+            warning_at = max(1, budget * 9 // 10)
+        if iteration == warning_at:
+            remaining = max(0, budget - iteration) if budget else None
+            detail = f" of {budget}; {remaining} remain" if budget else ""
+            injections.append(f"[ENV] Used {iteration} iterations{detail}. Prioritize remaining work and report unfinished items if the limit is reached.")
         current_cwd = os.getcwd()
         if self._last_cwd and current_cwd != self._last_cwd:
             injections.append(f"[ENV] Working directory changed: {self._last_cwd} -> {current_cwd}")
@@ -281,5 +287,5 @@ def init_middleware() -> MiddlewareChain:
     chain = MiddlewareChain()
     chain.add(LoopDetectionMiddleware(repeat_threshold=3))
     chain.add(SelfVerificationMiddleware(verify_interval=3))
-    chain.add(EnvironmentAwareMiddleware(max_iterations_warning=40))
+    chain.add(EnvironmentAwareMiddleware())
     return chain

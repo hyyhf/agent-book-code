@@ -1,0 +1,38 @@
+{
+  "poster": {
+    "file": "studio-poster.png",
+    "method": "HTML/CSS original screenshot collage, rendered with Electron",
+    "source": "studio-poster.html",
+    "screenshot_count": 20,
+    "note": "20 张原始截图按比例拼贴，无 AI 重绘。"
+  },
+  "gallery": [
+    {
+      "section": "概念工坊",
+      "files": [
+        "concept-desktop.png",
+        "concept-growth.png",
+        "concepts.png",
+        "concept-universe.png"
+      ]
+    },
+    {
+      "section": "心智庭院",
+      "files": [
+        "garden-today.png",
+        "garden-photo.png",
+        "garden.png",
+        "garden-philosophy.png"
+      ]
+    },
+    {
+      "section": "更多工作台界面",
+      "files": [
+        "chat.png",
+        "teams.png",
+        "study.png",
+        "replay.png"
+      ]
+    }
+  ]
+}

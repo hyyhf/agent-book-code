@@ -1,0 +1,114 @@
+{
+  "source": "funGUI/contestfiles/videosrc/exports/FunHarness_Studio_参赛演示_FunStudio_V2_1080p.mp4",
+  "source_seconds": 500.458667,
+  "shots": [
+    {
+      "scene": "Hook",
+      "source_start": 2.0,
+      "source_seconds": 9.375,
+      "speed": 2.5,
+      "frames": 90,
+      "output_start": 0.0
+    },
+    {
+      "scene": "ConceptPage",
+      "source_start": 45.0,
+      "source_seconds": 3.75,
+      "speed": 1,
+      "frames": 90,
+      "output_start": 3.75
+    },
+    {
+      "scene": "Sandbox",
+      "source_start": 60.9,
+      "source_seconds": 3.75,
+      "speed": 1,
+      "frames": 90,
+      "output_start": 7.5
+    },
+    {
+      "scene": "StudyGraph",
+      "source_start": 175.4,
+      "source_seconds": 3.75,
+      "speed": 1,
+      "frames": 90,
+      "output_start": 11.25
+    },
+    {
+      "scene": "StarMap",
+      "source_start": 339.4,
+      "source_seconds": 3.75,
+      "speed": 1,
+      "frames": 90,
+      "output_start": 15.0
+    },
+    {
+      "scene": "Teams",
+      "source_start": 390.6,
+      "source_seconds": 3.75,
+      "speed": 1,
+      "frames": 90,
+      "output_start": 18.75
+    },
+    {
+      "scene": "Swarm",
+      "source_start": 414.8,
+      "source_seconds": 3.75,
+      "speed": 1,
+      "frames": 90,
+      "output_start": 22.5
+    },
+    {
+      "scene": "Replay",
+      "source_start": 435.6,
+      "source_seconds": 3.75,
+      "speed": 1,
+      "frames": 90,
+      "output_start": 26.25
+    }
+  ],
+  "screenshots": {
+    "chat": "chatsession.png",
+    "teams": "agent_teams_visualization.png",
+    "concepts": "conceptworkshop_8.png",
+    "study": "studylab_1.png",
+    "garden": "mindgarden_9.png",
+    "replay": "sessionreplay.png"
+  },
+  "video": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080,
+        "pix_fmt": "yuv420p",
+        "r_frame_rate": "24/1",
+        "side_data_list": [
+          {}
+        ]
+      },
+      {
+        "codec_name": "aac",
+        "r_frame_rate": "0/0"
+      }
+    ],
+    "format": {
+      "duration": "30.000000",
+      "size": "4776983"
+    }
+  },
+  "gif": {
+    "seconds": 12,
+    "width": 720,
+    "fps": 10,
+    "bytes": 3043618
+  },
+  "music": {
+    "credit": "Carefree by Kevin MacLeod (incompetech.com), CC BY 4.0. Excerpt, volume adjustment and fades.",
+    "source": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400037",
+    "license": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "video_edit": "Original 1080p source; 30s; competition header and outro removed; two-pass H.264 ~5 MB."
+}

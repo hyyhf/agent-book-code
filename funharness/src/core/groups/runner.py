@@ -15,6 +15,7 @@ from ..file_editing import FileEditSession, file_edit_scope
 from ..attachments import DEFAULT_ATTACHMENT_MAX_CHARS, read_document
 from ..content import Content, content_text, tool_content
 from ..context import ContextManager, truncate_tool_results
+from ..loop_limits import DEFAULT_MAX_ITERATIONS, iteration_limit
 from ..tools import ToolRegistry, tool_read_file, tool_write_file, registry as global_tool_registry
 from .context_builder import GroupContextBuilder
 from .models import AgentGroup, AgentProfile, GroupAgentRun, GroupAgentSession, GroupArtifact, GroupMember, GroupMessage
@@ -22,7 +23,7 @@ from .store import GroupStore
 
 
 class GroupAgentRunner:
-    _MAX_ITERATIONS = 40
+    _MAX_ITERATIONS = DEFAULT_MAX_ITERATIONS
 
     def __init__(
         self,
@@ -94,7 +95,7 @@ class GroupAgentRunner:
             session.messages = self._compact_messages(messages)
             self.store.save_session(session)
 
-        for _ in range(self._MAX_ITERATIONS):
+        for _ in range(iteration_limit("group", self._MAX_ITERATIONS)):
             if cancel_event.is_set():
                 return "(cancelled)"
             stream_message: GroupMessage | None = None

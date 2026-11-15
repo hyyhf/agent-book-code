@@ -15,6 +15,7 @@ from .runtime import RuntimeTaskManager, command_scope, current_commands
 from .file_editing import FileEditSession, file_edit_scope
 from .content import tool_content
 from .context import ContextManager, truncate_tool_results
+from .loop_limits import DEFAULT_MAX_ITERATIONS, iteration_limit
 
 
 class SubAgent:
@@ -24,7 +25,7 @@ class SubAgent:
     just like the main agent. Without it, the subagent is text-only.
     """
 
-    _MAX_ITERATIONS = 60
+    _MAX_ITERATIONS = DEFAULT_MAX_ITERATIONS
     _MAX_RUNTIME_SECONDS = 600
 
     def __init__(
@@ -113,7 +114,7 @@ class SubAgent:
                 kwargs.pop("timeout", None)
                 return self.llm_client.chat.completions.create(**kwargs)
 
-        for _ in range(self._MAX_ITERATIONS):
+        for _ in range(iteration_limit("subagent", self._MAX_ITERATIONS)):
             if self._should_stop(cancel_event, should_cancel):
                 return "(subagent cancelled)"
             remaining = deadline - time.time()

@@ -14,24 +14,137 @@
 
 > **News：** FunHarness Studio v1.0.0 已发布！免安装便携版 / 安装包均可下载 → [**Download**](https://github.com/hyyhf/agent-book-code/releases/tag/v1.0.0)（暂支持 Windows 系统）
 
-<h2>FunHarness：从终端到图形化教学工作台</h2>
-
-<div style="display:flex; gap:10px; align-items:flex-start; justify-content:center;">
-  <div style="width:50%; text-align:center;">
-    <a href="#命令参考">
-      <img src="assets/tui_play.gif" alt="FunHarness TUI Demo" width="100%" />
-    </a>
-    <sub><b>FunHarness TUI</b><br/>终端界面，命令行交互</sub>
-  </div>
-  <div style="width:50%; text-align:center;">
-    <a href="docs/funharness_studio.zh.md">
-      <img src="assets/studio_play.gif" alt="FunHarness Studio Demo" width="100%" />
-    </a>
-    <sub><b>FunHarness Studio</b><br/>为学生打造的本地化Agent GUI，打开就能上手</sub>
-  </div>
 </div>
 
-</div>
+## FunHarness Studio
+
+**把 Agent 的执行过程、协作任务和学习成果，放进一个看得见、用得上的本地工作台。**
+
+Studio 与 FunHarness TUI 共享同一套 Agent Core：从对话与工作区文件管理，到多 Agent 协作、文档学习、概念探索与会话复盘，既能完成任务，也方便观察和理解 Agent 如何工作。
+
+[下载 Windows 版](https://github.com/hyyhf/agent-book-code/releases/tag/v1.0.0) · [Studio 使用说明](docs/funharness_studio.zh.md) · [核心能力](#核心功能)
+
+<!-- STUDIO_POSTER_START -->
+
+[![FunHarness Studio：概念工坊、心智庭院与智能工作台](assets/studio/studio-poster.png)](assets/studio/studio-poster.png)
+
+<sub>20 张原始截图拼贴 · [查看 HTML 排版源文件](assets/studio/studio-poster.html) · [查看界面图集](#界面图集)</sub>
+
+<!-- STUDIO_POSTER_END -->
+
+### 动态演示
+
+12 秒快速预览。更多清晰截图见下方界面图集。
+
+![FunHarness Studio 功能速览](assets/studio/studio-demo.gif)
+
+### 演示视频
+
+主要展示概念探索、互动沙盘、文档学习、心智庭院、多智能体协作与会话演绎等功能。
+
+<!-- STUDIO_VIDEO_START -->
+
+https://github.com/user-attachments/assets/8cf803d2-51ad-4072-ae1e-4604cee7055e
+
+<!-- STUDIO_VIDEO_END -->
+
+[下载 MP4 · 30 秒 · 1080p · 4.8 MB](assets/studio/studio-demo.mp4)
+
+<sub>配乐：<a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400037">Carefree — Kevin MacLeod</a>，<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></sub>
+
+<!-- STUDIO_GALLERY_START -->
+
+### 界面图集
+
+以下均为实际界面截图，点击可查看原图。
+
+#### 概念工坊
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/studio/concept-desktop.png"><img src="assets/studio/concept-desktop.png" alt="FunHarness Studio 概念桌面" width="100%" /></a>
+      <br/><b>概念桌面</b><br/><sub>学习、探索与归档，从同一张桌面出发</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/studio/concept-growth.png"><img src="assets/studio/concept-growth.png" alt="FunHarness Studio 概念生长" width="100%" /></a>
+      <br/><b>概念生长</b><br/><sub>沿学习路径推进，把理解落实到每个节点</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/studio/concepts.png"><img src="assets/studio/concepts.png" alt="FunHarness Studio 认知冲刺" width="100%" /></a>
+      <br/><b>认知冲刺</b><br/><sub>用环形跑道呈现学习进度与检查点</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/studio/concept-universe.png"><img src="assets/studio/concept-universe.png" alt="FunHarness Studio 概念宇宙" width="100%" /></a>
+      <br/><b>概念宇宙</b><br/><sub>展开概念关系，探索关联网络</sub>
+    </td>
+  </tr>
+</table>
+
+#### 心智庭院
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/studio/garden-today.png"><img src="assets/studio/garden-today.png" alt="FunHarness Studio 此刻对话" width="100%" /></a>
+      <br/><b>此刻对话</b><br/><sub>从一件真实的事出发，记录当下</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/studio/garden-photo.png"><img src="assets/studio/garden-photo.png" alt="FunHarness Studio 照片故事" width="100%" /></a>
+      <br/><b>照片故事</b><br/><sub>在可探索的粒子画面中重访记忆</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/studio/garden.png"><img src="assets/studio/garden.png" alt="FunHarness Studio 我的星图" width="100%" /></a>
+      <br/><b>我的星图</b><br/><sub>把经历与观察连接成个人星图</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/studio/garden-philosophy.png"><img src="assets/studio/garden-philosophy.png" alt="FunHarness Studio 我的哲学" width="100%" /></a>
+      <br/><b>我的哲学</b><br/><sub>让日常反思沉淀成可回读的笔记</sub>
+    </td>
+  </tr>
+</table>
+
+#### 更多工作台界面
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/studio/chat.png"><img src="assets/studio/chat.png" alt="FunHarness Studio Agent 对话" width="100%" /></a>
+      <br/><b>Agent 对话</b><br/><sub>查看思考过程、工具调用与任务结果</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/studio/teams.png"><img src="assets/studio/teams.png" alt="FunHarness Studio 多 Agent 协作" width="100%" /></a>
+      <br/><b>多 Agent 协作</b><br/><sub>查看角色分工与任务执行状态</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/studio/study.png"><img src="assets/studio/study.png" alt="FunHarness Studio 学习实验室" width="100%" /></a>
+      <br/><b>学习实验室</b><br/><sub>连接文档阅读、概念图谱与主动学习</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/studio/replay.png"><img src="assets/studio/replay.png" alt="FunHarness Studio 会话演绎" width="100%" /></a>
+      <br/><b>会话演绎</b><br/><sub>回放执行路径，检查工具输入与返回</sub>
+    </td>
+  </tr>
+</table>
+
+<!-- STUDIO_GALLERY_END -->
+
+<details>
+<summary>查看 FunHarness TUI 终端演示</summary>
+
+与 Studio 共享 Agent Core，也可以直接在终端里使用。
+
+![FunHarness TUI 终端演示](assets/tui_play.gif)
+
+[查看命令参考](#命令参考)
+
+</details>
 
 ---
 
@@ -142,7 +255,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-org/agent-book-code.git
+git clone https://github.com/hyyhf/agent-book-code.git
 cd agent-book-code
 
 # 安装依赖（使用 uv）
@@ -249,7 +362,13 @@ funharness/   完整生产版本（TUI + 飞书通道）
 ### 功能更新
 
 > [!NOTE] 
-> - **2026-10-04 —— FunHarness Studio v1.0.0（本周更新）**
+> - **2026-11-15 —— FunHarness Studio v1.1.0**
+>   - **多轮对话导航**：左侧新增轮次刻度栏，悬停预览用户输入、点击跳转；刻度随鼠标位置渐进伸展。
+>   - **工作区与文件引用提速**：优化目录读取、分页与缓存；只输入 `@` 展示根目录，输入关键词后搜索子目录，并显示路径以区分同名文件。
+>   - **实时拖拽排版**：改善流式输出时调整工作区宽度的卡顿，对话实时换行、输入框同步适配，并保持阅读位置。
+>   - **任务耗时与过程折叠**：实时显示处理时长，仅在整个任务正常完成后平滑收起执行过程，保留最终答复；点击耗时可重新展开。
+>   - **本轮交付物**：最终答复下方展示产物卡片，按文件类型区分图标，显示大小与目录，点击即可在文件管理器中定位文件。[完整更新说明](docs/releases/funharness-studio-v1.1.0.zh-CN.md)。
+> - **2026-10-04 —— FunHarness Studio v1.0.0**
 >   - **多模态读图与附件体验**：`tool_read_file` 统一读取文本和图片，将图片传入后续模型推理；文本默认读取上限提升至 30 万字符。发送后附件移至消息气泡上方，以 50px 高的紧凑卡片展示。
 >   - **上下文管理**：增加推理前预算检查、历史压缩及超限恢复重试，保存修正后的预算，改善发送“继续”仍反复超限的问题。
 >   - **命令调度**：长命令返回任务编号，支持查询、等待、取消和显式后台运行；完善超时与进程树清理，支持 CMD、Windows PowerShell 和 PowerShell 7。
