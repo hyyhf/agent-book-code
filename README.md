@@ -42,11 +42,6 @@ Studio 与 FunHarness TUI 共享同一套 Agent Core：从对话与工作区文�
 
 主要展示概念探索、互动沙盘、文档学习、心智庭院、多智能体协作与会话演绎等功能。
 
-<!-- STUDIO_VIDEO_START -->
-
-https://github.com/user-attachments/assets/171248ff-0fe8-495e-9411-c34e5a293d27
-
-<!-- STUDIO_VIDEO_END -->
 
 [下载 MP4 · 30 秒 · 1080p · 4.8 MB](assets/studio/studio-demo.mp4)
 
