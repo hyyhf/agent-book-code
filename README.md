@@ -28,7 +28,7 @@ Studio 与 FunHarness TUI 共享同一套 Agent Core：从对话与工作区文�
 
 [![FunHarness Studio：概念工坊、心智庭院与智能工作台](assets/studio/studio-poster.png)](assets/studio/studio-poster.png)
 
-<sub>20 张原始截图拼贴 · [查看 HTML 排版源文件](assets/studio/studio-poster.html) · [查看界面图集](#界面图集)</sub>
+<sub>18 张原始截图拼贴 · [查看 HTML 排版源文件](assets/studio/studio-poster.html) · [查看界面图集](#界面图集)</sub>
 
 <!-- STUDIO_POSTER_END -->
 
@@ -88,22 +88,12 @@ https://github.com/user-attachments/assets/171248ff-0fe8-495e-9411-c34e5a293d27
 <table>
   <tr>
     <td width="50%" align="center">
-      <a href="assets/studio/garden-today.png"><img src="assets/studio/garden-today.png" alt="FunHarness Studio 此刻对话" width="100%" /></a>
-      <br/><b>此刻对话</b><br/><sub>从一件真实的事出发，记录当下</sub>
-    </td>
-    <td width="50%" align="center">
       <a href="assets/studio/garden-photo.png"><img src="assets/studio/garden-photo.png" alt="FunHarness Studio 照片故事" width="100%" /></a>
       <br/><b>照片故事</b><br/><sub>在可探索的粒子画面中重访记忆</sub>
     </td>
-  </tr>
-  <tr>
     <td width="50%" align="center">
       <a href="assets/studio/garden.png"><img src="assets/studio/garden.png" alt="FunHarness Studio 我的星图" width="100%" /></a>
       <br/><b>我的星图</b><br/><sub>把经历与观察连接成个人星图</sub>
-    </td>
-    <td width="50%" align="center">
-      <a href="assets/studio/garden-philosophy.png"><img src="assets/studio/garden-philosophy.png" alt="FunHarness Studio 我的哲学" width="100%" /></a>
-      <br/><b>我的哲学</b><br/><sub>让日常反思沉淀成可回读的笔记</sub>
     </td>
   </tr>
 </table>

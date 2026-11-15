@@ -3,8 +3,8 @@
     "file": "studio-poster.png",
     "method": "HTML/CSS original screenshot collage, rendered with Electron",
     "source": "studio-poster.html",
-    "screenshot_count": 20,
-    "note": "20 张原始截图按比例拼贴，无 AI 重绘。"
+    "screenshot_count": 18,
+    "note": "18 张原始截图按比例拼贴，无 AI 重绘。"
   },
   "gallery": [
     {
@@ -19,10 +19,8 @@
     {
       "section": "心智庭院",
       "files": [
-        "garden-today.png",
         "garden-photo.png",
-        "garden.png",
-        "garden-philosophy.png"
+        "garden.png"
       ]
     },
     {

@@ -11,10 +11,8 @@ GROUPS = [
         ("concept-universe.png", "概念宇宙", "展开概念关系，探索关联网络"),
     ]),
     ("心智庭院", [
-        ("garden-today.png", "此刻对话", "从一件真实的事出发，记录当下"),
         ("garden-photo.png", "照片故事", "在可探索的粒子画面中重访记忆"),
         ("garden.png", "我的星图", "把经历与观察连接成个人星图"),
-        ("garden-philosophy.png", "我的哲学", "让日常反思沉淀成可回读的笔记"),
     ]),
     ("更多工作台界面", [
         ("chat.png", "Agent 对话", "查看思考过程、工具调用与任务结果"),
@@ -64,7 +62,7 @@ def main():
     else:
         text = text.replace("<details>\n<summary>查看 FunHarness TUI 终端演示</summary>", block + "<details>\n<summary>查看 FunHarness TUI 终端演示</summary>", 1)
     readme.write_text(text, encoding="utf-8")
-    manifest = {"poster": {"file": "studio-poster.png", "method": "HTML/CSS original screenshot collage, rendered with Electron", "source": "studio-poster.html", "screenshot_count": 20, "note": "20 张原始截图按比例拼贴，无 AI 重绘。"}, "gallery": [{"section": title, "files": [item[0] for item in entries]} for title, entries in GROUPS]}
+    manifest = {"poster": {"file": "studio-poster.png", "method": "HTML/CSS original screenshot collage, rendered with Electron", "source": "studio-poster.html", "screenshot_count": 18, "note": "18 张原始截图按比例拼贴，无 AI 重绘。"}, "gallery": [{"section": title, "files": [item[0] for item in entries]} for title, entries in GROUPS]}
     (ROOT / "assets/studio/gallery.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 

@@ -5,8 +5,8 @@
 <script>
 const columns=[
 [['concept-growth.png','概念生长'],['garden.png','我的星图'],['study.png','学习实验室'],['garden-calendar.png','日历'],['concept-page.png','概念学习页']],
-[['concept-desktop.png','概念桌面'],['concepts.png','认知冲刺'],['garden-today.png','此刻对话'],['concept-sandbox.png','互动沙盘'],['garden-topics.png','生活议题']],
-[['garden-photo.png','照片故事'],['concept-universe.png','概念宇宙'],['garden-philosophy.png','我的哲学'],['replay.png','会话演绎'],['study-notes.png','文档学习']],
+[['concept-desktop.png','概念桌面'],['concepts.png','认知冲刺'],['concept-sandbox.png','互动沙盘'],['garden-topics.png','生活议题']],
+[['garden-photo.png','照片故事'],['concept-universe.png','概念宇宙'],['replay.png','会话演绎'],['study-notes.png','文档学习']],
 [['teams.png','多 Agent 协作'],['concept-library.png','概念库'],['chat.png','Agent 对话'],['garden-review.png','人生回望'],['swarm.png','Agent Swarm']]];
 document.getElementById('gallery').innerHTML=columns.map(col=>'<div class="column">'+col.map(([src,title])=>'<figure><img src="'+src+'" alt="'+title+'"><figcaption>'+title+'</figcaption></figure>').join('')+'</div>').join('');
 </script></html>
