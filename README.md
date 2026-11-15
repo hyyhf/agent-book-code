@@ -44,7 +44,7 @@ Studio 与 FunHarness TUI 共享同一套 Agent Core：从对话与工作区文�
 
 <!-- STUDIO_VIDEO_START -->
 
-https://github.com/user-attachments/assets/171248ff-0fe8-495e-9411-c34e5a293d27
+<!-- https://github.com/user-attachments/assets/171248ff-0fe8-495e-9411-c34e5a293d27 -->
 
 <!-- STUDIO_VIDEO_END -->
 
