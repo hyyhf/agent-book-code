@@ -44,11 +44,11 @@ Studio 与 FunHarness TUI 共享同一套 Agent Core：从对话与工作区文�
 
 <!-- STUDIO_VIDEO_START -->
 
-https://github.com/user-attachments/assets/171248ff-0fe8-495e-9411-c34e5a293d2
+https://github.com/user-attachments/assets/171248ff-0fe8-495e-9411-c34e5a293d27
 
 <!-- STUDIO_VIDEO_END -->
 
-<!-- [下载 MP4 · 30 秒 · 1080p · 4.8 MB](assets/studio/studio-demo.mp4) -->
+[下载 MP4 · 30 秒 · 1080p · 4.8 MB](assets/studio/studio-demo.mp4)
 
 <sub>配乐：<a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400037">Carefree — Kevin MacLeod</a>，<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></sub>
 
